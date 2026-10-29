@@ -60,7 +60,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='Switchyard', version='0.5.1-dev.2', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title='Switchyard', version='0.5.1-dev.3', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 def connection():
@@ -465,7 +465,7 @@ def setup_complete(body: InitialSetup, request: Request):
 
 @app.get('/healthz')
 def health():
-    return {'status': 'ok', 'version': '0.5.1-dev.2'}
+    return {'status': 'ok', 'version': '0.5.1-dev.3'}
 
 
 @app.get('/api/login/options')
@@ -941,7 +941,7 @@ def backup(_=Depends(require_auth)):
         if credentials_key and (len(credentials_key) != 44 or credkey.stat().st_mode & 0o077):
             raise HTTPException(503, 'Saved credentials key format or file permissions are unsafe')
         manifest = {
-            'application': 'Switchyard', 'format': 2, 'version': '0.5.1-dev.2',
+            'application': 'Switchyard', 'format': 2, 'version': '0.5.1-dev.3',
             'created_utc': datetime.now(timezone.utc).isoformat(),
             'files': {'switchyard.sqlite3': hashlib.sha256(content).hexdigest(),
                       'known_hosts': hashlib.sha256(hosts).hexdigest(),
@@ -1007,13 +1007,13 @@ def configure_update(body: UpdateConfig, request: Request, _=Depends(require_aut
 @app.get('/api/update/status')
 def update_status(_=Depends(require_auth)):
     configured = bool(saved_setting('update_asset_id') and saved_setting('update_project') and saved_setting('update_directory'))
-    installed = '0.5.1-dev.2'
+    installed = '0.5.1-dev.3'
     latest = None
     check_error = None
     try:
         from urllib.request import Request as UrlRequest, urlopen
         req = UrlRequest('https://raw.githubusercontent.com/gigabytegrove/switchyard/main/VERSION',
-                         headers={'User-Agent':'Switchyard/0.5.1-dev.2'})
+                         headers={'User-Agent':'Switchyard/0.5.1-dev.3'})
         with urlopen(req, timeout=3) as remote:
             contents = remote.read(80).decode('ascii').strip()
         if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.]+)?', contents):

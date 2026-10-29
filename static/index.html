@@ -7,6 +7,7 @@
   <title>Switchyard · Remote operations</title>
   <link rel="stylesheet" href="/static/xterm.css">
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/workspace.css">
   <script src="/static/xterm.js" defer></script>
   <script src="/static/addon-fit.js" defer></script>
   <script src="/static/guacamole.js" defer></script>
@@ -92,31 +93,49 @@ http://ops.home.arpa:9791"></textarea>
       <div class="sidebar-bottom"><div class="account-circle">A</div><div class="account-text"><strong>Administrator</strong><span>Local account</span></div><button id="logoutBtn" class="signout" title="Sign out" aria-label="Sign out">↗</button></div>
     </aside>
     <main class="body-pane">
-      <header class="topbar"><div class="route-mark" aria-hidden="true"><span></span><span></span><span></span></div><div class="breadcrumb"><span>SWITCHYARD</span><b>/</b><strong id="bread">Overview</strong></div><div class="top-right"><span class="online"><i></i> Gateway available</span><span id="clock"></span></div></header>
+      <header class="topbar"><div class="route-mark" aria-hidden="true"><span></span><span></span><span></span></div><div class="breadcrumb"><span>SWITCHYARD</span><b>/</b><strong id="bread">Overview</strong></div><div class="top-right"><span class="online"><i></i> Switchyard online</span><span id="clock"></span></div></header>
       <section id="page-machines" class="page content-page hidden" aria-labelledby="machineDirectoryTitle">
         <div class="heading-row machine-heading"><div><div class="section-kicker">YOUR INFRASTRUCTURE</div><h1 id="machineDirectoryTitle">Machines.</h1><p>Every host, every connection, organized your way.</p></div>
           <div class="form-actions"><button type="button" class="action-quiet" id="newFolder">+ Folder</button><button type="button" class="action-primary" data-action="new-asset">+ Add machine</button></div></div>
         <div class="machine-toolbar"><label class="sr-only" for="machineSearch">Search machines</label><input id="machineSearch" type="search" placeholder="Find a machine, address, or folder"><label class="sr-only" for="machineEnvironment">Environment</label><select id="machineEnvironment" aria-label="Filter machines by environment"><option value="">All environments</option></select><span id="machineCount" role="status"></span></div>
         <div id="machineDirectory" class="machine-directory" aria-live="polite"></div>
       </section>
-      <section id="page-machine" class="page content-page hidden" aria-labelledby="machineTitle">
-        <button type="button" class="text-button machine-back" id="machineBack">← All machines</button>
-        <div class="heading-row machine-profile-head"><div><div id="machineFolderLabel" class="section-kicker">MACHINE PROFILE</div><h1 id="machineTitle">Machine</h1><p id="machineAddress" class="mono"></p></div>
-          <div class="form-actions"><button type="button" class="action-quiet" id="machineEdit">Edit SSH profile</button><button type="button" class="action-primary" id="machineAddDesktop">+ Desktop connection</button></div></div>
-        <nav id="machineTabs" class="machine-tabs" aria-label="Machine tools"><span id="desktopCount" class="sr-only"></span><span id="terminalCount" class="sr-only"></span>
-          <button type="button" data-machine-tab="overview" aria-current="page">Overview</button>
-          <button type="button" data-machine-tab="terminals">Terminal</button>
-          <button type="button" data-machine-tab="desktops">Remote desktop</button>
-          <button type="button" data-machine-tab="files">File transfer</button>
-          <button type="button" data-machine-tab="docker">Docker</button>
-          <button type="button" data-machine-tab="health">Health</button>
-        </nav>
-        <div id="machinePanel-overview" class="machine-panel"><div id="machineOverviewContent"></div></div>
-        <div id="machinePanel-terminals" class="machine-panel hidden"></div>
-        <div id="machinePanel-desktops" class="machine-panel hidden"></div>
-        <div id="machinePanel-files" class="machine-panel hidden"></div>
-        <div id="machinePanel-docker" class="machine-panel hidden"></div>
-        <div id="machinePanel-health" class="machine-panel hidden"></div>
+      <section id="page-machine" class="page machine-workspace hidden" aria-labelledby="machineTitle">
+        <div class="machine-layout">
+          <aside class="machine-context" aria-label="Switch machine">
+            <div class="context-heading"><strong>Machine directory</strong><button type="button" id="machineBack" class="context-all" aria-label="View all machines">All machines ↗</button></div>
+            <label class="sr-only" for="machineSwitchSearch">Filter machines</label>
+            <input id="machineSwitchSearch" type="search" placeholder="Find another machine" autocomplete="off" aria-controls="machineSwitcher">
+            <nav id="machineSwitcher" aria-label="Available machines"></nav>
+            <div class="context-foot">Your machines and connections are stored on this appliance.</div>
+          </aside>
+          <div class="machine-work-area">
+            <header class="machine-masthead">
+              <div class="machine-identification">
+                <div class="machine-emblem" aria-hidden="true">▣</div>
+                <div class="machine-identification-text"><div id="machineFolderLabel" class="machine-context-label">MACHINE / UNFILED</div>
+                <h1 id="machineTitle">Machine</h1><div class="machine-meta"><span id="machineAddress" class="mono"></span><span class="machine-meta-divider" aria-hidden="true"></span><span id="machineAvailability" role="status">Connection details saved</span></div></div>
+              </div>
+              <div class="machine-masthead-actions"><button type="button" class="action-quiet" id="machineEdit">Edit machine</button><button type="button" class="action-quiet" id="machineAddDesktop">Add desktop</button><button type="button" class="action-primary" id="machinePrimaryConnect">Connect via SSH <span aria-hidden="true">↗</span></button></div>
+            </header>
+            <nav id="machineTabs" class="machine-tabs" aria-label="Machine tools" role="tablist"><span id="desktopCount" class="sr-only"></span><span id="terminalCount" class="sr-only"></span>
+              <button type="button" data-machine-tab="overview" role="tab" aria-controls="machinePanel-overview" aria-selected="true">Overview</button>
+              <button type="button" data-machine-tab="terminals" role="tab" aria-controls="machinePanel-terminals" aria-selected="false">Terminal</button>
+              <button type="button" data-machine-tab="desktops" role="tab" aria-controls="machinePanel-desktops" aria-selected="false">Remote desktop</button>
+              <button type="button" data-machine-tab="files" role="tab" aria-controls="machinePanel-files" aria-selected="false">Files</button>
+              <button type="button" data-machine-tab="docker" role="tab" aria-controls="machinePanel-docker" aria-selected="false">Docker</button>
+              <button type="button" data-machine-tab="health" role="tab" aria-controls="machinePanel-health" aria-selected="false">Health</button>
+            </nav>
+            <div class="machine-content" id="machineContent">
+              <section id="machinePanel-overview" class="machine-panel" role="tabpanel" aria-label="Machine overview"><div id="machineOverviewContent"></div></section>
+              <section id="machinePanel-terminals" class="machine-panel hidden" role="tabpanel" aria-label="Machine terminal"></section>
+              <section id="machinePanel-desktops" class="machine-panel hidden" role="tabpanel" aria-label="Machine remote desktops"></section>
+              <section id="machinePanel-files" class="machine-panel hidden" role="tabpanel" aria-label="Machine files"></section>
+              <section id="machinePanel-docker" class="machine-panel hidden" role="tabpanel" aria-label="Machine Docker"></section>
+              <section id="machinePanel-health" class="machine-panel hidden" role="tabpanel" aria-label="Machine health"></section>
+            </div>
+          </div>
+        </div>
       </section>
       <section id="page-overview" class="page content-page">
         <div class="section-kicker">01 — CONTROL ROOM</div>
@@ -126,7 +145,7 @@ http://ops.home.arpa:9791"></textarea>
         <div class="overview-footer"><strong>Designed for direct access.</strong><span>SSH host keys are verified before connecting. Vault credentials are resolved on demand.</span></div>
       </section>
       <section id="page-assets" class="page content-page hidden"><div class="section-kicker">02 — ASSET DIRECTORY</div><div class="heading-row"><div><h1>All your machines.</h1><p>Connections stay here, even when containers change.</p></div><button class="action-primary" data-action="new-asset">+ New asset</button></div><div class="list-controls"><input id="assetSearch" type="search" placeholder="Search by name, host, environment…" aria-label="Search assets"><span id="assetTotal"></span></div><div id="assetList" class="asset-table"></div></section>
-      <section id="page-terminals" class="page terminal-page hidden"><div class="terminal-heading"><div><div class="section-kicker">03 — LIVE WORKSPACE</div><h1>Terminal.</h1></div><button class="action-small" data-page="assets">+ Connect to host</button></div><div id="terminalTabs" class="terminal-tabs" role="tablist"></div><div id="terminalPanels" class="terminal-panels"><div class="empty-state">No terminal sessions open. Select an asset and choose <strong>Connect</strong>.</div></div><div class="terminal-hint">Remote sessions close on disconnect. Enable tmux on an asset to resume its shell across reconnections.</div></section>
+      <section id="page-terminals" class="page terminal-page hidden"><div class="terminal-heading"><div><h2>SSH terminal</h2><p>Encrypted shell session on the selected machine</p></div><div class="terminal-actions"><span id="machineTerminalStatus" role="status" aria-live="polite">No session</span><button id="machineTerminalConnect" type="button" class="action-primary">New session <span aria-hidden="true">↗</span></button></div></div><div id="terminalTabs" class="terminal-tabs" role="tablist"></div><div id="terminalPanels" class="terminal-panels"><div class="empty-state">No SSH session open. Use New session to connect to this machine.</div></div><div class="terminal-hint">Connection closes when a session is disconnected. Optional tmux reattachment is configured in the SSH profile.</div></section>
       <section id="page-desktops" class="page content-page hidden">
         <div class="section-kicker">REMOTE ACCESS / RDP + VNC + SPICE</div>
         <div class="heading-row"><div><h1>Desktops, in reach.</h1><p>Open RDP, VNC and SPICE virtual-machine consoles. Sessions use private gateways and remain inside your server.</p></div><div class="form-actions"><button id="desktopRefresh" class="action-quiet" type="button">Refresh</button><button id="desktopBatchProbe" class="action-quiet" type="button">Check first 20</button><button id="desktopExport" class="action-quiet" type="button">Export connections</button><button id="desktopImport" class="action-quiet" type="button">Import connections</button><input id="desktopImportFile" type="file" accept=".json,application/json" hidden aria-label="Switchyard desktop inventory JSON"><button id="spiceImport" class="action-quiet" type="button">Open .vv file</button><input id="spiceVVFile" type="file" accept=".vv,text/plain" hidden aria-label="Virt-viewer console file"><button id="desktopNew" class="action-primary" type="button">+ Add desktop</button></div></div>

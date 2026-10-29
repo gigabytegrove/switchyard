@@ -7,7 +7,7 @@
 Self-hosted machine profiles with SSH, SFTP, Docker, Linux health, and remote desktops (RDP, VNC, SPICE). Optional encrypted stored passwords and Vaultwarden integration.
 
 [![Source tests and Docker build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.5.1--dev.2-B72237)
+![Version](https://img.shields.io/badge/version-0.5.1--dev.3-B72237)
 ![Docker](https://img.shields.io/badge/deployment-Docker-B72237?logo=docker)
 ![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-5934AC)
 ![Status](https://img.shields.io/badge/status-development-orange)
@@ -36,7 +36,7 @@ Open **`http://YOUR-DOCKER-HOST-IP:9791`** on a trusted LAN browser. Use the **o
 docker compose ps
 ```
 
-**LAN HTTP compatibility:** Browser session IDs now use `crypto.getRandomValues()` rather than `crypto.randomUUID()`, which Chromium does not expose on private-IP plain HTTP. The fix covers SSH, RDP, VNC and SPICE connections; a CSPRNG regression test runs in CI.
+**LAN browser compatibility:** Session IDs for SSH, RDP, VNC, and SPICE use `crypto.getRandomValues()`, which works over private-IP HTTP as well as HTTPS. Browser UUID availability is regression tested in Chromium over an simulated LAN browser constraints.
 
 **Deployment images:** Docker Compose pulls published artifacts from GHCR. The app is built in GitHub Actions; Docker Hub is not required on the deployment host. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
 
@@ -75,6 +75,14 @@ After first-run completion, use **Settings → Browser and network access** to u
 | In-app updater executor | SQLite settings | Settings → Software updates |
 
 **The `/data` Docker named volume is required for persistence.** Never use `docker compose down -v` during upgrades or normal maintenance. A container/image replacement does not reset settings when the volume is preserved.
+
+## Machine workspace (v0.5.1-dev.3)
+
+The Machines directory is now the primary navigation destination. The host-first workspace presents a persistent machine switcher and one compact machine header, followed by **Overview, Terminal, Remote desktop, Files, Docker and Health** tabs. These tabs reuse existing SSH, SFTP, Docker, remote desktop and agentless health APIs, preserving machine records and credentials in the Docker volume. Available connection rows open SSH or the matching RDP/VNC/SPICE session directly; the Terminal tab provides a new-session / reconnect action and clear connection states. Non-SSH machines keep their desktop access without misleading file, Docker or health controls.
+
+At ≤920px, the machine switcher becomes a horizontally scrollable strip; at ≤660px, the header and actions reorganize for touch and small screens. All machine tabs are keyboard accessible (arrow keys, Home, End), with visible focus and reduced-motion support.
+
+The machine-specific workspace rules are in `static/workspace.css`, loaded after the existing product stylesheet. The UI does not claim that a machine is live or healthy until a real connection or host check has succeeded.
 
 ## Features
 

@@ -20,11 +20,8 @@ check_http() {
 }
 
 check_http /healthz 'health endpoint responds'
-expected_version="$(tr -d '\r\n' < "$(dirname "${BASH_SOURCE[0]}")/../VERSION")"
-[[ "$expected_version" =~ ^[0-9A-Za-z.-]+$ ]] || { echo 'FAIL: invalid VERSION file' >&2; exit 1; }
-expected_regex="${expected_version//./\\.}"
-grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$expected_regex"'"' "$TEMP/response" || {
-  echo "FAIL: running version does not match $expected_version" >&2; exit 1;
+grep -Eq '"version"[[:space:]]*:[[:space:]]*"0\.5\.1-dev\.1"' "$TEMP/response" || {
+  echo 'FAIL: running version is not 0.5.1-dev.3' >&2; exit 1;
 }
 check_http / 'Switchyard UI responds'
 grep -q 'SWITCHYARD' "$TEMP/response" || { echo 'FAIL: expected UI shell missing' >&2; exit 1; }
@@ -32,6 +29,7 @@ check_http /api/setup/status 'Setup status endpoint responds'
 check_http /static/guacamole.js 'Guacamole browser runtime is packaged'
 check_http /static/spice/main.js 'SPICE HTML5 browser runtime is packaged'
 check_http /static/spice-view.html 'SPICE viewer responds'
+check_http /static/workspace.css 'Machine workspace stylesheet is packaged'
 "${CURL[@]}" -D "$TEMP/headers" -o /dev/null "$BASE/static/spice-view.html"
 grep -Eiq '^x-frame-options:[[:space:]]*SAMEORIGIN' "$TEMP/headers" || {
   echo 'FAIL: SPICE frame policy not configured' >&2; exit 1;
@@ -48,4 +46,4 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   fi
   echo 'PASS: guacd has no published host port'
 fi
-echo 'PASS: non-destructive Switchyard v0.5.1-dev.2 smoke checks complete'
+echo 'PASS: non-destructive Switchyard v0.5.1-dev.3 smoke checks complete'

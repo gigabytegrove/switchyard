@@ -1,11 +1,21 @@
-## 0.5.1-dev.2 — LAN HTTP connection fix
+## 0.5.1-dev.3 — machine workspace refinement
 
-- Fix `crypto.randomUUID is not a function` on private-IP HTTP browsers using the Web Crypto `getRandomValues()` API for RFC 4122 v4 view IDs.
-- Correct four connection paths: SSH terminal, RDP/VNC, SPICE, and imported SPICE consoles.
-- Add a 10,000-ID JavaScript regression test for crypto APIs available on insecure origins; run it in GitHub Actions.
-- Preserve all machines, credentials, preferences, and Docker volumes without requiring migration. Live protocol operations remain subject to real-target testing.
+- Replaced the nested, duplicate-title machine pages with a contextual two-column console: machine switcher, machine identity, explicit connection actions, and machine-scoped operational tabs.
+- Rebuilt Overview around factual connection inventory, SSH/desktop launch entries, and direct Files/Docker/Health tools. Existing asset folders and desktop records are preserved.
+- Reworked terminal presentation with connection state, new-session/reconnect control and per-machine session filtering, preventing unrelated hosts' terminal tabs appearing under the current machine.
+- Added accessible tab semantics and Arrow/Home/End keyboard support, responsive 390px navigation, visible focus, and reduced-motion handling.
+- Added separate `static/workspace.css` for this machine workspace, keeping the established white/graphite/signal-red identity; removed the misleading gateway-ready copy from the header.
+- Verified with mocked Chromium flows at desktop and mobile widths, backend tests, and frontend static/JS checks. Live SSH/RDP/VNC/SPICE remains unverified.
 
-## 0.5.1-dev.2 — machine-centric operations and integrated administration
+## 0.5.1-dev.3 — fix remote connection failures over LAN HTTP
+
+- Fix Chromium `crypto.randomUUID is not a function` on private, plain-HTTP LAN origins. Use `crypto.getRandomValues` to produce RFC 4122 version-4 session IDs without downgrading randomness.
+- Apply the correction to SSH terminals, Guacamole RDP/VNC sessions, SPICE sessions, and imported virt-viewer console sessions.
+- Add actual Chromium insecure-origin regression coverage, plus repeatability and identifier-format checks. Protect the new test in CI.
+- Preserve all existing machines, saved credentials, databases, proxy settings, and Docker volumes. No migration or reset is required.
+- This fixes a browser-side connection blocker; live remote protocol operation still requires end-to-end verification.
+
+## 0.5.1-dev.1 — machine-centric operations and integrated administration
 
 - Replace disconnected SSH/desktop/file/Docker/health navigation with a single machines inventory and host profiles containing Overview, Terminal, Remote Desktop, File Transfer, Docker and Health tabs.
 - Add persisted nested machine folders and environment filtering without losing existing SSH or desktop records. Group desktop-only hosts with SSH profiles by normalized host identity.

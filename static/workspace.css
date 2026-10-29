@@ -1,0 +1,253 @@
+/* Switchyard / Signal Desk — machine workspace, v0.5.1-dev.3.
+   Precision dispatch console. White work surface, graphite structure, signal red.
+   This stylesheet owns machine-centric presentation; core form/dialog styles remain in style.css.
+   Breakpoints: 1180, 920, 660, 440px. Animation: 180ms, with reduced-motion opt-out. */
+:root {
+  --sw-bg: #f5f6f8;
+  --sw-paper: #fff;
+  --sw-surface: #eceef2;
+  --sw-line: #daddE4;
+  --sw-line-dark: #b8bdc9;
+  --sw-ink: #22232c;
+  --sw-muted: #505565;
+  --sw-red: #b72237;
+  --sw-red-hover: #871729;
+  --sw-violet: #5934ac;
+  --sw-console: #191c25;
+  --sw-focus: #b72237;
+  --sw-work-font: "Segoe UI", "Inter", Arial, sans-serif;
+}
+/* Structural hierarchy: persistent app header, machine index, one operator workspace. */
+body { background:var(--sw-bg); color:var(--sw-ink); font-family:var(--sw-work-font); }
+.shell {min-height:100dvh;background:var(--sw-bg)}
+.sidebar {box-shadow:none;border-bottom:1px solid var(--sw-line);}
+.sidebar .brand {border-right:1px solid #a60b26;}
+.sidebar .brand small {color:#ffe8ed}
+.sidebar .nav-item {transition:color 180ms ease, background-color 180ms ease}
+.sidebar .nav-item.active {background:var(--sw-red);color:#fff}
+.sidebar .nav-item:hover:not(.active) {color:var(--sw-red);background:#faedf0}
+.sidebar .sidebar-bottom {min-width:188px}
+.topbar {height:49px;border-bottom:1px solid var(--sw-line);background:#fff}
+.topbar .breadcrumb {font-size:12px;min-width:0}
+.topbar .breadcrumb strong {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar .online {font-weight:600;color:var(--sw-muted)}
+.topbar .online i {background:#178060}
+button, input, select, textarea {font-family:var(--sw-work-font)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,
+[role="tab"]:focus-visible {outline:3px solid var(--sw-focus)!important;outline-offset:3px}
+button:disabled {cursor:not-allowed;opacity:.5}
+.action-primary {background:var(--sw-red);color:#fff;border:1px solid var(--sw-red);font-weight:700;box-shadow:none}
+.action-primary:hover:not(:disabled) {background:var(--sw-red-hover);border-color:var(--sw-red-hover)}
+.action-quiet {background:#fff;border:1px solid var(--sw-line-dark);color:var(--sw-ink);font-weight:650}
+.action-quiet:hover:not(:disabled) {border-color:var(--sw-red);color:var(--sw-red)}
+/* Machine directory: no ornamental boxed cards. */
+#page-machines {max-width:1550px;min-height:calc(100dvh - 160px);margin:0 auto;padding:clamp(24px,3vw,48px)}
+.machine-heading {gap:25px;align-items:flex-end;margin-bottom:28px}
+.machine-heading h1 {margin:6px 0 8px;font-size:clamp(34px,4vw,54px);font-weight:850;letter-spacing:-.045em}
+.machine-heading p {font-size:15px;line-height:1.5;color:var(--sw-muted)}
+.machine-toolbar {background:#fff;padding:14px 16px;margin-bottom:26px;gap:12px;border:1px solid var(--sw-line)}
+.machine-toolbar input {min-width:150px;max-width:560px;background:#fff;border-color:var(--sw-line-dark)}
+.machine-toolbar select {max-width:260px;min-height:42px;border-color:var(--sw-line-dark)}
+.machine-toolbar span {font-weight:650;color:var(--sw-muted)}
+.machine-directory {border-top:2px solid var(--sw-ink);background:#fff}
+.machine-folder-heading {margin:0;padding:12px 18px;background:#f1f2f5;border-top:1px solid var(--sw-line)}
+.machine-group-label {margin:0;padding:14px 20px;border-bottom:1px solid var(--sw-line);background:var(--sw-surface);font-weight:750;color:var(--sw-ink)}
+.machine-entry {min-height:82px;padding:15px 19px;border-bottom:1px solid var(--sw-line);transition:background 180ms ease}
+.machine-entry:hover {background:#f7f8fa}
+.machine-entry-main strong {font-size:17px;font-weight:740;line-height:1.3}
+.machine-entry-main small {font-size:13px;color:var(--sw-muted)}
+.machine-symbol {background:#edf0f4;color:var(--sw-red);border-left:3px solid var(--sw-red);font-size:22px}
+.machine-protocols {justify-content:flex-end;gap:9px}
+.protocol-label {border:0;border-left:2px solid var(--sw-violet);padding:5px 9px;font-size:11px;background:var(--sw-surface);color:#373544}
+.machine-chevron {color:var(--sw-red);font-size:22px}
+.machine-empty {background:#fff;padding:62px 30px}
+/* Machine contextual navigation — a dedicated workspace rather than legacy page nesting. */
+#page-machine {padding:0;max-width:none;min-height:calc(100dvh - 156px)}
+.machine-layout {display:grid;grid-template-columns:245px minmax(0,1fr);min-height:calc(100dvh - 156px);align-items:stretch}
+.machine-context {background:#fff;border-right:1px solid var(--sw-line);display:flex;flex-direction:column;min-width:0}
+.context-heading {padding:22px 17px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.context-heading strong {font-size:13px;letter-spacing:-.015em;font-weight:800}
+.context-all {border:0;background:none;color:var(--sw-red);font-size:11px;font-weight:750;padding:5px;text-align:right}
+.context-all:hover {text-decoration:underline}
+#machineSwitchSearch {margin:0 13px 13px;width:calc(100% - 26px);height:40px;border:1px solid var(--sw-line-dark);background:#fff;font-size:12px;padding:0 11px;min-width:0}
+#machineSwitcher {overflow:auto;flex:1;min-height:90px;padding:0 8px 20px;max-height:calc(100dvh - 360px);scrollbar-width:thin}
+.switcher-entry {display:flex;gap:10px;width:100%;padding:11px 9px;border:0;border-left:3px solid transparent;background:transparent;text-align:left;align-items:center;color:var(--sw-ink);min-width:0;transition:background 180ms ease}
+.switcher-entry:hover {background:var(--sw-surface)}
+.switcher-entry.active {border-left-color:var(--sw-red);background:#fbeef0}
+.switcher-icon {font-size:18px;color:var(--sw-violet);flex:0 0 22px;text-align:center}
+.switcher-entry.active .switcher-icon {color:var(--sw-red)}
+.switcher-copy {display:flex;flex-direction:column;gap:4px;min-width:0}
+.switcher-copy strong {font-weight:720;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.switcher-copy small {font-size:11px;color:var(--sw-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.context-empty {padding:20px 11px;color:var(--sw-muted);line-height:1.5;font-size:13px}
+.context-foot {margin-top:auto;padding:16px 18px 20px;border-top:1px solid var(--sw-line);font-size:11px;line-height:1.5;color:var(--sw-muted)}
+.machine-work-area {min-width:0;overflow:hidden;background:var(--sw-bg)}
+.machine-masthead {background:#fff;padding:clamp(25px,3vw,44px) clamp(24px,3vw,48px) 28px;display:flex;align-items:flex-end;justify-content:space-between;gap:22px;border-bottom:1px solid var(--sw-line)}
+.machine-identification {display:flex;align-items:center;min-width:0;gap:18px}
+.machine-emblem {width:68px;height:68px;display:grid;place-items:center;background:var(--sw-red);font-size:30px;color:#fff;flex:0 0 68px;transform:skew(-5deg)}
+.machine-identification-text {min-width:0}
+.machine-context-label {font-size:11px;font-weight:750;color:var(--sw-violet);letter-spacing:.015em;margin-bottom:8px}
+.machine-identification h1 {font-size:clamp(32px,3.2vw,48px);font-weight:850;line-height:1.05;letter-spacing:-.045em;margin:0 0 11px;overflow-wrap:anywhere}
+.machine-meta {display:flex;align-items:center;flex-wrap:wrap;gap:12px;color:var(--sw-muted);font-size:13px}
+.machine-meta .mono {font-size:13px;color:#363b48}
+.machine-meta-divider {height:15px;border-left:1px solid var(--sw-line-dark)}
+#machineAvailability {font-size:12px;color:#2a6850;font-weight:700}
+.machine-masthead-actions {display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;align-items:center}
+.machine-masthead-actions button {height:40px;min-height:40px;padding:0 15px;font-size:12px;white-space:nowrap}
+.machine-tabs {position:relative;display:flex;gap:0;margin:0;padding:0 clamp(20px,2.5vw,42px);background:#fff;border-bottom:1px solid var(--sw-line);scrollbar-width:thin;overflow-x:auto}
+.machine-tabs button {background:transparent;border:0;border-bottom:3px solid transparent;min-height:57px;padding:0 clamp(12px,1.4vw,22px);margin:0;color:#404452;font-size:13px;font-weight:720;transition:color 180ms,background 180ms;white-space:nowrap}
+.machine-tabs button.active {background:#fff;color:var(--sw-red);border-bottom-color:var(--sw-red)}
+.machine-tabs button:hover:not(:disabled) {background:#f5f6f9;color:var(--sw-red)}
+.machine-content {padding:clamp(19px,2.5vw,38px) clamp(22px,3vw,48px) 45px;min-height:500px;max-width:1700px}
+.machine-panel {min-width:0;max-width:100%;animation:workspace-in 180ms ease-out}
+.machine-panel.hidden {display:none!important}
+@keyframes workspace-in {from{opacity:.7;transform:translateY(3px)}to{opacity:1;transform:none}}
+/* Overview: left summary/right factual metadata, followed by connection inventory. */
+.profile-intro {display:grid;grid-template-columns:minmax(0,1.5fr) minmax(240px,.85fr);gap:clamp(22px,4vw,68px);padding:10px 0 31px;border-bottom:1px solid var(--sw-line)}
+.overview-overline {font-size:11px;font-weight:800;color:var(--sw-red);margin-bottom:13px}
+.overview-summary h2 {font:800 clamp(23px,2.2vw,34px)/1.2 var(--sw-work-font);letter-spacing:-.03em;max-width:680px;margin:0 0 12px;overflow-wrap:anywhere}
+.overview-summary p {color:var(--sw-muted);font-size:14px;line-height:1.65;max-width:660px;margin:0}
+.machine-facts {margin:0;border-top:2px solid var(--sw-ink)}
+.machine-fact {display:grid;grid-template-columns:96px minmax(0,1fr);gap:14px;border-bottom:1px solid var(--sw-line);padding:10px 0;font-size:12px;align-items:start}
+.machine-fact dt {color:var(--sw-muted);font-weight:600}
+.machine-fact dd {margin:0;font-weight:720;min-width:0;overflow-wrap:anywhere}
+.profile-connect-section,.profile-tool-section {padding:30px 0 0}
+.profile-section-head {display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:14px}
+.profile-section-head h3 {font-size:19px;letter-spacing:-.02em;margin:0;font-weight:800}
+.profile-section-head p {font-size:12px;color:var(--sw-muted);margin:0}
+.connection-list {border-top:2px solid var(--sw-ink)}
+.connection-entry {width:100%;display:flex;gap:16px;align-items:center;text-align:left;background:#fff;border:0;border-bottom:1px solid var(--sw-line);padding:17px 18px;min-height:74px;transition:background 180ms}
+.connection-entry:hover {background:#f3f4f7}
+.connection-icon {flex:0 0 46px;height:42px;display:grid;place-items:center;background:#eeeef2;color:var(--sw-red);font:800 16px var(--mono)}
+.connection-copy {min-width:0;display:flex;flex-direction:column;gap:6px;flex:1}
+.connection-copy strong {font-size:14px;font-weight:760;color:var(--sw-ink)}
+.connection-copy small {font-size:12px;color:var(--sw-muted);overflow-wrap:anywhere}
+.connection-launch {color:var(--sw-red);font-weight:750;font-size:12px;white-space:nowrap}
+.profile-tool-links {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--sw-line)}
+.tool-link {display:flex;flex-direction:column;gap:8px;text-align:left;border:0;background:#fff;padding:19px 20px;min-height:96px;color:var(--sw-ink);transition:background 180ms}
+.tool-link strong {font-size:15px;font-weight:750}
+.tool-link span {color:var(--sw-muted);font-size:12px;line-height:1.5}
+.tool-link:hover {background:#f2f3f8}
+/* Nested service panels: remove duplicate marketing headers; keep active operational controls. */
+.machine-subsection {max-width:none!important;padding:0!important;min-height:0!important;margin:0!important}
+.machine-subsection .heading-row {margin:0 0 19px;align-items:center}
+.machine-subsection .section-kicker {display:none}
+.machine-subsection .heading-row h1 {font-family:var(--sw-work-font);font-size:clamp(22px,2vw,29px);font-weight:800;letter-spacing:-.025em}
+.machine-subsection .heading-row p {font-size:13px;color:var(--sw-muted);margin-top:4px;max-width:750px}
+.machine-subsection .two-heading h2 {font-family:var(--sw-work-font);font-size:19px;font-weight:760}
+.machine-subsection .path-bar {color:var(--sw-muted)}
+.machine-subsection .asset-table {border-top:2px solid var(--sw-ink)}
+.machine-subsection .empty-state {background:#fff;border:1px dashed var(--sw-line-dark);color:var(--sw-muted);min-height:140px;padding:26px}
+.machine-host-select {display:none!important}
+/* Terminal is a genuine session workbench, not another page hero. */
+.machine-panel .terminal-page {height:min(76dvh,820px);min-height:500px;padding:0!important;max-width:none!important;display:flex;flex-direction:column}
+.machine-panel .terminal-heading {background:#fff;border:1px solid var(--sw-line);border-bottom:0;margin:0;padding:14px 18px;align-items:center;gap:12px}
+.machine-panel .terminal-heading h2 {font-size:17px;font-weight:800;margin:0 0 3px;letter-spacing:-.02em;color:var(--sw-ink)}
+.machine-panel .terminal-heading p {font-size:12px;line-height:1.4;color:var(--sw-muted);margin:0}
+.terminal-actions {display:flex;align-items:center;gap:16px;margin-left:auto}
+.terminal-actions .action-primary {min-height:35px;font-size:12px;padding:7px 13px;white-space:nowrap}
+.session-state {display:flex;align-items:center;gap:8px;font-size:12px;color:#7b4450;font-weight:700;white-space:nowrap}
+.session-state::before {content:"";width:8px;height:8px;background:#a6a7b0;flex:none}
+.session-state.connected {color:#16654a}
+.session-state.connected::before {background:#16845e}
+.session-state.connecting {color:#6b4b93}
+.session-state.connecting::before {background:#7550ad}
+.machine-panel .terminal-tabs {border:1px solid #343742;border-bottom:0;background:#292b35;min-height:40px;max-height:46px;gap:0}
+.machine-panel .terminal-tab {background:#343743;color:#e8e9ee;border-right:1px solid #565866}
+.machine-panel .terminal-tab.active {background:var(--sw-console);color:#fff}
+.machine-panel .terminal-tab .tab-select {font-family:var(--sw-work-font);font-size:12px;font-weight:700;padding:10px 14px}
+.machine-panel .terminal-panels {min-height:310px;flex:1;background:var(--sw-console);border:1px solid #393b46}
+.machine-panel .terminal-panels>.empty-state {background:var(--sw-console);color:#e9ebf3;border:0;display:grid;place-items:center;text-align:center;min-height:300px}
+.machine-panel .terminal-host {padding:14px}
+.machine-panel .terminal-hint {background:#fff;padding:12px 14px;border:1px solid var(--sw-line);margin:0;line-height:1.6;font-size:12px}
+/* File transfer tool stays in the host profile, with uncluttered action ordering. */
+.machine-panel .file-controls {display:flex;align-items:end;gap:8px;margin-bottom:16px}
+.machine-panel .file-controls label {color:var(--sw-muted);font-size:12px;font-weight:700}
+.machine-panel .file-controls input,.machine-panel .file-controls select {min-height:41px}
+.machine-panel .file-row {background:#fff;padding:13px 16px;border-bottom:1px solid var(--sw-line)}
+.machine-panel .file-row:hover {background:#f6f7fa}
+.machine-panel .file-name {font-size:13px}
+.machine-panel #fileLocation {font-size:12px;overflow-wrap:anywhere}
+/* The interface should feel purposeful when viewport gets smaller. */
+@media(max-width:1180px) {
+ .machine-layout {grid-template-columns:212px minmax(0,1fr)}
+ .machine-masthead {align-items:flex-start;flex-direction:column}
+ .machine-masthead-actions {justify-content:flex-start}
+ .profile-intro {grid-template-columns:1fr;gap:24px}
+ .machine-facts {max-width:700px}
+}
+@media(max-width:920px) {
+ .machine-layout {display:block}
+ .machine-context {display:block;padding:10px 18px;border-bottom:1px solid var(--sw-line);border-right:0}
+ .context-heading {padding:5px 0 8px}
+ #machineSwitchSearch {margin:0 0 7px;width:100%}
+ #machineSwitcher {display:flex;overflow-x:auto;gap:5px;max-height:96px;min-height:0;padding:2px 0 7px}
+ .switcher-entry {flex:0 0 180px;min-width:160px;padding:8px;border-left:0;border-bottom:3px solid transparent}
+ .switcher-entry.active {border-bottom-color:var(--sw-red)}
+ .context-foot {display:none}
+ .machine-masthead {padding:25px 24px}
+ .machine-content {padding:24px}
+ .machine-tabs {padding:0 16px}
+ .machine-panel .terminal-page {height:65dvh}
+}
+@media(max-width:660px) {
+ #page-machines {padding:18px 14px}
+ .machine-heading {align-items:stretch;gap:12px}
+ .machine-toolbar {flex-wrap:wrap;padding:12px}
+ .machine-toolbar input,.machine-toolbar select {max-width:none;width:100%;flex:1 1 100%}
+ .machine-toolbar span {width:100%;white-space:normal}
+ .machine-entry {grid-template-columns:42px minmax(0,1fr) 16px;padding:13px 10px;gap:10px}
+ .machine-protocols {grid-column:2;grid-row:2;justify-content:flex-start}
+ .machine-chevron {grid-column:3;grid-row:1}
+ .machine-context {padding:8px 12px}
+ .machine-masthead {padding:20px 16px;gap:16px}
+ .machine-identification {gap:13px}
+ .machine-emblem {width:48px;height:48px;flex-basis:48px;font-size:23px}
+ .machine-identification h1 {font-size:31px}
+ .machine-meta {gap:8px;font-size:11px}
+ .machine-masthead-actions {width:100%;gap:6px}
+ .machine-masthead-actions button {flex:1 1 auto;padding:0 9px;font-size:11px}
+ .machine-tabs {padding:0 8px}
+ .machine-tabs button {min-height:49px;padding:0 12px;font-size:12px}
+ .machine-content {padding:19px 14px 35px}
+ .profile-section-head {flex-direction:column;gap:6px}
+ .profile-intro {gap:20px}
+ .profile-tool-links {grid-template-columns:1fr}
+ .tool-link {min-height:0;padding:15px}
+ .connection-entry {padding:13px 10px;gap:9px}
+ .connection-icon {flex-basis:36px;height:36px}
+ .connection-launch {font-size:11px}
+ .machine-fact {grid-template-columns:80px minmax(0,1fr)}
+ .machine-panel .terminal-page {height:65dvh;min-height:360px}
+ .machine-panel .terminal-heading {padding:10px 12px}
+ .machine-panel .terminal-heading p {display:none}
+ .terminal-actions {gap:7px}
+ .session-state {font-size:10px}
+ .machine-panel .terminal-panels {min-height:210px}
+ .machine-panel .file-controls {gap:6px}
+ .machine-panel .file-controls label {flex-basis:100%}
+ .machine-panel .file-row {grid-template-columns:minmax(0,1fr) auto}
+}
+@media(max-width:440px) {
+ .machine-identification h1 {font-size:28px}
+ .machine-meta-divider {display:none}
+ .machine-masthead-actions button {flex-basis:calc(50% - 5px)}
+ #machinePrimaryConnect {flex-basis:100%}
+ .machine-panel .terminal-heading h2 {font-size:15px}
+ .session-state {display:none}
+ .topbar .online,#clock {display:none}
+}
+@media(prefers-reduced-motion:reduce) {
+ .machine-panel {animation:none!important}
+ .switcher-entry,.tool-link,.connection-entry,.machine-entry,.machine-tabs button {transition:none!important}
+}
+/* The desktop navigation is one clear line, not two stacked toolbars. */
+@media(min-width:1181px) {
+  .sidebar {grid-template-columns:205px minmax(0,1fr) auto 188px;grid-template-rows:64px}
+  .sidebar .brand {grid-column:1;grid-row:1}
+  .sidebar #navigation {grid-column:2;grid-row:1;justify-content:flex-start;padding:4px 14px}
+  .sidebar #adminNavigation {grid-column:3;grid-row:1;justify-content:flex-end;padding:4px 8px;border-left:1px solid var(--sw-line)}
+  .sidebar .sidebar-bottom {grid-column:4;grid-row:1;min-width:188px;padding:0 12px}
+  .sidebar .nav-item {padding:10px 11px;font-size:12px}
+  #page-machine,.machine-layout {min-height:calc(100dvh - 113px)}
+}

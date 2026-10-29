@@ -25,9 +25,10 @@ function button(label, cls, handler) {
 }
 function showError(error) { toast(error?.message || 'The request failed.', true); }
 /**
- * Browser-only session identifier. crypto.randomUUID() is unavailable on
- * ordinary LAN HTTP. getRandomValues() works in insecure contexts.
- * These are view IDs only; authorization stays server-side.
+ * Browser-only session identifier. crypto.randomUUID() is not exposed by
+ * Chromium on ordinary LAN HTTP (an insecure context), while getRandomValues()
+ * remains available. Keep RFC 4122 v4 shape and CSPRNG strength in both cases.
+ * IDs are view identifiers only; authorization remains server-side.
  */
 function clientSessionId() {
   if (!globalThis.crypto || typeof globalThis.crypto.getRandomValues !== 'function') {
@@ -125,6 +126,17 @@ function initMachineWorkspace() {
   $('#machineSearch').addEventListener('input', renderMachineDirectory);
   $('#machineEnvironment').addEventListener('change', renderMachineDirectory);
   $('#machineBack').addEventListener('click', () => navigate('machines'));
+  $('#machineSwitchSearch').addEventListener('input', renderMachineSwitcher);
+  $('#machinePrimaryConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id).catch(showError);});
+  $('#machineTerminalConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id).catch(showError);});
+  $('#machineTabs').addEventListener('keydown', event => {
+    if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    const available = $$('[data-machine-tab]:not(:disabled)');
+    const index = available.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? available.length - 1 :
+      (index + (event.key === 'ArrowRight' ? 1 : -1) + available.length) % available.length;
+    event.preventDefault(); available[next].focus(); machineTab(available[next].dataset.machineTab);
+  });
   $('#machineEdit').addEventListener('click', () => {const a = machineAsset(); if (a) openAsset(a);});
   $('#machineAddDesktop').addEventListener('click', () => {
     openDesktopEditor();
@@ -271,30 +283,93 @@ function renderMachineDirectory() {
   };
   renderFolder('');
 }
+function renderMachineSwitcher() {
+  const target = $('#machineSwitcher'); if (!target) return;
+  const query = ($('#machineSwitchSearch')?.value || '').trim().toLowerCase();
+  target.replaceChildren();
+  const items = machines().filter(m => [m.host,m.ssh[0]?.label,m.desktops[0]?.label].join(' ').toLowerCase().includes(query));
+  if (!items.length) { target.append(node('p','context-empty','No machines match.')); return; }
+  for (const m of items) {
+    const item = button('', 'switcher-entry'+(m.host === state.machineHost ? ' active' : ''),() => openMachine(m.host));
+    const title = m.ssh[0]?.label || m.desktops[0]?.label || m.host;
+    const copy = node('span','switcher-copy');
+    copy.append(node('strong','',title),node('small','mono',m.host));
+    item.append(node('span','switcher-icon','▣'),copy);
+    if (m.host === state.machineHost) item.setAttribute('aria-current','true');
+    item.setAttribute('aria-label',`Open ${title} (${m.host})`);
+    target.append(item);
+  }
+}
+function updateTerminalStatus() {
+  const status = $('#machineTerminalStatus');
+  if (!status) return;
+  const sessions = [...state.tabs.values()].filter(t => normalizedHost(t.asset.host) === state.machineHost);
+  const connected = sessions.filter(t => t.ws?.readyState === WebSocket.OPEN).length;
+  const connecting = sessions.filter(t => t.ws?.readyState === WebSocket.CONNECTING).length;
+  status.className = connected ? 'session-state connected' : connecting ? 'session-state connecting' : 'session-state';
+  status.textContent = connected ? `${connected} connected` : connecting ? 'Connecting…' : sessions.length ? 'Disconnected' : 'No session';
+  const connect = $('#machineTerminalConnect');
+  if (connect) connect.textContent = connected || connecting ? 'New session ↗' : sessions.length ? 'Reconnect ↗' : 'Connect via SSH ↗';
+}
 function openMachine(host) {
   state.machineHost = normalizedHost(host);
   const a = machineAsset();
   $('#machineTitle').textContent = machineTitle(); $('#machineAddress').textContent = state.machineHost;
-  $('#machineFolderLabel').textContent = state.folders.find(f => f.id === a?.folder_id)?.name || 'MACHINE PROFILE';
+  const folderName = state.folders.find(f => f.id === a?.folder_id)?.name || 'Unfiled';
+  $('#machineFolderLabel').textContent = `MACHINES / ${folderName}`;
+  const sshAction = $('#machinePrimaryConnect'); sshAction.classList.toggle('hidden',!a);
+  $('#machineAvailability').textContent = a ? 'SSH configured' : 'Desktop connection only';
+  $('#machineSwitchSearch').value = '';
+  renderMachineSwitcher(); updateTerminalStatus();
   $('#machineEdit').disabled = !a;
   for (const id of ['fileAsset','dockerAsset','healthAsset']) if (a) $('#' + id).value = a.id;
   $('#filePath').value = '.';
-  renderMachineOverview(); renderDesktopList();
+  state.currentTab = [...state.tabs.keys()].find(k => normalizedHost(state.tabs.get(k).asset.host) === state.machineHost) || null;
+  renderTabs(); renderMachineOverview(); renderDesktopList();
   navigate('machine'); machineTab('overview');
 }
 function renderMachineOverview() {
   const a = machineAsset(), ds = machineDesktops(), target = $('#machineOverviewContent');
   target.replaceChildren();
-  const intro = node('div','profile-summary');
-  intro.append(node('h2','',machineTitle()),node('p','',a?.note || ds[0]?.note || 'No description saved. Add notes in the connection editor.'));
-  const actions = node('div','profile-actions');
-  if (a) actions.append(button('Open SSH terminal','action-primary', () => {Promise.resolve(connect(a.id)).catch(showError);}),
-    button('Browse files','action-quiet', () => machineTab('files')),
-    button('Inspect Docker','action-quiet', () => machineTab('docker')),
-    button('Check health','action-quiet', () => machineTab('health')));
-  for (const d of ds) actions.append(button(`Open ${d.protocol.toUpperCase()} · ${d.label}`,'action-quiet', () => {Promise.resolve(openDesktop(d)).catch(showError);}));
-  if (!a) intro.append(node('p','profile-hint','No SSH connection configured for this host. Add an SSH machine profile to enable files, Docker and health.'));
-  target.append(intro, actions);
+  const intro = node('div','profile-intro');
+  const head = node('div','overview-summary');
+  head.append(node('div','overview-overline','MACHINE AT A GLANCE'),
+    node('h2','',a?.note || ds[0]?.note || 'Ready for your next connection.'),
+    node('p','',a ? 'This machine is configured for SSH, file access and agentless operations.' : 'This machine has desktop access. Add an SSH profile to enable files, Docker and health.'));
+  intro.append(head);
+  const facts = node('dl','machine-facts');
+  for (const [label,value] of [['Address',state.machineHost],['SSH',a ? `${a.username}@${a.host}:${a.port || 22}` : 'Not configured'],
+      ['Environment',a?.environment || ds[0]?.environment || 'Unassigned'],['Desktop access',ds.length ? `${ds.length} configured` : 'None configured']]) {
+    const pair=node('div','machine-fact'); pair.append(node('dt','',label),node('dd','',value)); facts.append(pair);
+  }
+  intro.append(facts); target.append(intro);
+  const section = node('section','profile-connect-section');
+  const top=node('div','profile-section-head');
+  top.append(node('h3','','Available connections'),node('p','', 'Choose how to work with this machine.'));
+  section.append(top);
+  const actions = node('div','connection-list');
+  if (a) {
+    const link = button('', 'connection-entry', () => connect(a.id).catch(showError));
+    const copy = node('span','connection-copy');copy.append(node('strong','','SSH terminal'),node('small','',`${a.username}@${a.host}:${a.port || 22} · Encrypted session`));
+    link.append(node('span','connection-icon','>_'),copy,node('span','connection-launch','Connect ↗'));actions.append(link);
+  }
+  for (const d of ds) {
+    const link = button('', 'connection-entry', () => openDesktop(d).catch(showError));
+    const copy = node('span','connection-copy');copy.append(node('strong','',`${d.protocol.toUpperCase()} · ${d.label}`),node('small','',`${d.host}:${d.port || ''} · Remote desktop`));
+    link.append(node('span','connection-icon','▣'),copy,node('span','connection-launch','Open ↗'));actions.append(link);
+  }
+  if (!a && !ds.length) actions.append(node('p','context-empty','No connections are configured for this machine.'));
+  section.append(actions);target.append(section);
+  if (a) {
+    const tools = node('section','profile-tool-section');
+    const top=node('div','profile-section-head');top.append(node('h3','','Machine tools'),node('p','','Operate directly from this profile.'));
+    const links = node('div','profile-tool-links');
+    for (const [name,tab,description] of [['Files','files','Browse and transfer over SFTP'],['Docker','docker','Containers and Compose projects'],['Health','health','Linux health and recorded observations']]) {
+      const el = button('', 'tool-link',() => machineTab(tab));
+      el.append(node('strong','',name+' ↗'),node('span','',description));links.append(el);
+    }
+    tools.append(top,links);target.append(tools);
+  }
 }
 function machineTab(tab) {
   const sshRequired = ['terminals','files','docker','health'].includes(tab);
@@ -303,7 +378,8 @@ function machineTab(tab) {
     $('#machinePanel-' + id).classList.toggle('hidden', tab !== id);
     const button = $(`[data-machine-tab="${id}"]`);
     button.classList.toggle('active', tab === id);
-    button.setAttribute('aria-current',tab === id ? 'page' : 'false');
+    button.setAttribute('aria-selected',String(tab === id));
+    button.tabIndex = tab === id ? 0 : -1;
     button.disabled = id !== 'overview' && id !== 'desktops' && !machineAsset();
   }
   state.machineTab = tab;
@@ -312,6 +388,7 @@ function machineTab(tab) {
   if (tab === 'health') refreshHealthHistory().catch(showError);
   if (tab === 'desktops') { refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); requestAnimationFrame(() => fitDesktop(desktopCurrent())); }
   if (tab === 'terminals' && state.currentTab) requestAnimationFrame(() => state.tabs.get(state.currentTab)?.fit.fit());
+  if (tab === 'terminals') updateTerminalStatus();
 }
 function showFolderDialog(folder = null) {
   $('#folderForm').reset(); $('#folderForm').dataset.edit = folder?.id || '';
@@ -342,7 +419,7 @@ async function setShell() {
 }
 async function refreshAssets() {
   state.assets = await api('/assets'); renderAssets(); renderQuick(); renderFileSelect(); renderDockerSelect(); renderHealthSelect();
-  renderMachineDirectory();
+  renderMachineDirectory(); renderMachineSwitcher();
   const info = await api('/overview');
   $('#metricAssets').textContent = info.assets;
   $('#metricGroups').textContent = info.environments;
@@ -357,7 +434,7 @@ function navigate(page) {
   state.page = page;
   $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page || (page === 'machine' && el.dataset.page === 'machines')));
-  $('#bread').textContent = ({ overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
+  $('#bread').textContent = ({ machine:'Machine / ' + machineTitle(), machines:'Machines', overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
   if (page === 'desktops') { refreshDesktops().catch(showError); refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); fitDesktop(desktopCurrent()); }
   if (page === 'runbooks') refreshRunbooks().catch(showError);
   if (page === 'health') refreshHealthHistory().catch(showError);
@@ -441,12 +518,13 @@ async function connect(aid) {
   const tab = { id, asset, ws: null, password, terminal: new window.Terminal({ cursorBlink: true, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: 14, lineHeight: 1.25, scrollback: 5000, theme: { background: '#202027', foreground: '#F5F6F9', cursor: '#E24E62', selectionBackground: '#58586A' } }), fit: new window.FitAddon.FitAddon() };
   tab.terminal.loadAddon(tab.fit);
   state.tabs.set(id, tab); state.currentTab = id;
-  navigate('terminals'); renderTabs();
+  navigate('terminals'); renderTabs(); updateTerminalStatus();
   const panel = $('#term-' + id); tab.terminal.open(panel); tab.fit.fit();
   const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/terminal/' + encodeURIComponent(aid);
   const ws = new WebSocket(wsUrl); tab.ws = ws;
   tab.terminal.write('\x1b[38;5;113mSwitchyard · connecting to ' + asset.host + '\x1b[0m\r\n');
   ws.onopen = () => {
+    updateTerminalStatus();
     ws.send(JSON.stringify({ type: 'auth', password: tab.password })); tab.password = null;
     ws.send(JSON.stringify({ type: 'resize', cols: tab.terminal.cols, rows: tab.terminal.rows }));
   };
@@ -454,17 +532,19 @@ async function connect(aid) {
     try { const message = JSON.parse(event.data); if (message.type === 'data') tab.terminal.write(message.data); else if (message.type === 'error') { tab.terminal.writeln('\r\n\x1b[31m' + message.message + '\x1b[0m'); toast(message.message, true); } }
     catch { tab.terminal.writeln('\r\nUnexpected terminal message.'); }
   };
-  ws.onerror = () => tab.terminal.writeln('\r\n\x1b[31mConnection error.\x1b[0m');
-  ws.onclose = () => { tab.terminal.writeln('\r\n\x1b[90m[Session disconnected]\x1b[0m'); renderTabs(); };
+  ws.onerror = () => {tab.terminal.writeln('\r\n\x1b[31mConnection failed. Review host trust and SSH credentials.\x1b[0m'); updateTerminalStatus();};
+  ws.onclose = () => { tab.password = null; tab.terminal.writeln('\r\n\x1b[90m[Session disconnected — use Reconnect to open a new session]\x1b[0m'); renderTabs(); updateTerminalStatus(); }; 
   tab.terminal.onData(data => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data })); });
   tab.terminal.onResize(size => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows })); });
 }
 function renderTabs() {
   const nav = $('#terminalTabs'); nav.replaceChildren();
   const panels = $('#terminalPanels');
-  if (!state.tabs.size) panels.replaceChildren(node('div', 'empty-state', 'No terminal sessions open. Select an asset and choose Connect.'));
+  const visible = [...state.tabs.values()].filter(t => normalizedHost(t.asset.host) === state.machineHost);
+  if (!visible.length) panels.querySelector(':scope > .empty-state') || panels.append(node('div', 'empty-state', 'No SSH session open. Select Connect to start.'));
   else panels.querySelector(':scope > .empty-state')?.remove();
   for (const [id, t] of state.tabs) {
+    if (normalizedHost(t.asset.host) !== state.machineHost) continue;
     const wrap = node('div', 'terminal-tab' + (id === state.currentTab ? ' active' : ''));
     const select = button(t.asset.label + (t.ws?.readyState === WebSocket.CLOSED ? ' · closed' : ''), 'tab-select', () => selectTab(id));
     select.setAttribute('role', 'tab'); select.setAttribute('aria-selected', String(id === state.currentTab));
@@ -472,11 +552,11 @@ function renderTabs() {
     wrap.append(select, close); nav.append(wrap);
     if (!$('#term-' + id)) { const panel = node('div', 'terminal-host'); panel.id = 'term-' + id; panels.append(panel); }
   }
-  $$('.terminal-host', panels).forEach(el => el.classList.toggle('active', el.id === 'term-' + state.currentTab));
-  $('#terminalCount').textContent = state.tabs.size;
+  $$('.terminal-host', panels).forEach(el => el.classList.toggle('active', el.id === 'term-' + state.currentTab && normalizedHost(state.tabs.get(state.currentTab)?.asset.host) === state.machineHost));
+  $('#terminalCount').textContent = state.tabs.size; updateTerminalStatus();
 }
 function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
-function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = state.tabs.keys().next().value || null; renderTabs(); if (state.currentTab) selectTab(state.currentTab); }
+function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = [...state.tabs.keys()].find(k => normalizedHost(state.tabs.get(k).asset.host) === state.machineHost) || null; renderTabs(); updateTerminalStatus(); if (state.currentTab) selectTab(state.currentTab); }
 function renderFileSelect() {
   const select = $('#fileAsset'); const selected = select.value; select.replaceChildren(node('option', '', 'Select an asset'));
   for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; select.append(opt); }
@@ -1452,7 +1532,7 @@ function bind() {
   $('#fileUploadButton').addEventListener('click', () => $('#fileUpload').click());
   $('#terminalTabs').addEventListener('keydown', event => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    const ids = [...state.tabs.keys()]; if (ids.length < 2) return;
+    const ids = [...state.tabs.keys()].filter(id => normalizedHost(state.tabs.get(id).asset.host) === state.machineHost); if (ids.length < 2) return;
     const index = ids.indexOf(state.currentTab), delta = event.key === 'ArrowRight' ? 1 : -1;
     const next = ids[(index + delta + ids.length) % ids.length];
     event.preventDefault(); selectTab(next);
