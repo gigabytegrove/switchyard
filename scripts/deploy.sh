@@ -38,7 +38,30 @@ fi
 
 docker compose config --quiet
 docker compose build --pull
-docker compose up -d --wait
+docker compose up -d
+
+# Check the real application endpoint instead of relying on upstream guacd image HEALTHCHECK.
+health_url='http://127.0.0.1:9791/healthz'
+if [[ "$(sed -n 's/^SWITCHYARD_BIND=//p' .env | tail -n 1)" != '127.0.0.1' ]]; then
+  printf 'Docker host binding differs from loopback; using Compose health status.\n'
+  for attempt in $(seq 1 45); do
+    app_id="$(docker compose ps -q switchyard)"
+    state="$(docker inspect --format '{{.State.Health.Status}}' "$app_id" 2>/dev/null || true)"
+    [[ "$state" == healthy ]] && break
+    sleep 2
+  done
+  [[ "$state" == healthy ]] || fail 'Switchyard did not become healthy; run docker compose logs switchyard'
+else
+  for attempt in $(seq 1 45); do
+    if curl --fail --silent --show-error --max-time 3 "$health_url" >/dev/null 2>&1; then break; fi
+    sleep 2
+  done
+  curl --fail --show-error --max-time 6 "$health_url" >/dev/null || fail 'Switchyard health endpoint did not become ready'
+fi
+
+guacd_id="$(docker compose ps -q guacd)"
+[[ -n "$guacd_id" ]] || fail 'guacd container is missing'
+[[ "$(docker inspect --format '{{.State.Running}}' "$guacd_id")" == true ]] || fail 'guacd is not running'
 docker compose ps
 printf '\nDeployed. Browser origin: %s\n' "$origin"
 printf 'Health check: curl --fail http://127.0.0.1:9791/healthz (for loopback binding)\n'
