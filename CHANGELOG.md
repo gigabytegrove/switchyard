@@ -1,6 +1,15 @@
-## 0.5.0-dev.2
+## 0.5.1-dev.1 — machine-centric operations and integrated administration
 
-- Fix Compose project collision: remove globally fixed `container_name: switchyard`, which prevented a separate Compose project from creating its own service. The deployment script now refuses to start a second instance when another Docker container publishes TCP 9791; no automatic deletion or volume migration is attempted. Document safe, single-project upgrades from Docker management panels.
+- Replace disconnected SSH/desktop/file/Docker/health navigation with a single machines inventory and host profiles containing Overview, Terminal, Remote Desktop, File Transfer, Docker and Health tabs.
+- Add persisted nested machine folders and environment filtering without losing existing SSH or desktop records. Group desktop-only hosts with SSH profiles by normalized host identity.
+- Add opt-in encrypted SSH and desktop passwords stored in SQLite ciphertext under a permission-restricted `/data/credentials.key`; never return plaintext through listing/export. Retain or clear saved secrets explicitly.
+- Replace browser `prompt()` / `confirm()` use with native application dialogs for credential entry, input, confirmation and remote operation safety. Keep transient unsaved SSH credentials in browser memory until logout.
+- Move Vaultwarden into Settings → Integrations, and hide the MFA login field when the login policy does not require it.
+- Add Settings → Software updates with operator-configured SSH-to-Docker Compose executor, password reauthentication, detached update job and recoverable log view. No Docker socket mount. Automated rollback not yet available.
+- Include encrypted credential recovery key in protected backup bundles when present. Add source tests for folders, credential confidentiality, MFA visibility, and updater authorization and command safety.
+- **Development**: Backend/API tests and mocked browser controls verified; live protocol sessions, Docker image build and an actual self-update still require qualification.
+
+## 0.5.0-dev.2
 
 - Fixed unintended mandatory remote MFA: HTTPS proxy access works with password alone until MFA is explicitly enrolled. Existing enabled MFA remains enforced.
 - Added QR-code enrollment to Settings, rendered server-side without uploading authenticator secrets to third parties.

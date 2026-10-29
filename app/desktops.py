@@ -70,6 +70,8 @@ class DesktopInput(BaseModel):
     note: str = Field(default='', max_length=500)
     auth_type: Literal['interactive', 'vault', 'none'] = 'interactive'
     credential_ref: str = Field(default='', max_length=120)
+    password: str | None = Field(default=None, max_length=4096, exclude=True, repr=False)
+    clear_password: bool = Field(default=False, exclude=True)
     security: Literal['nla', 'tls', 'rdp', 'any'] = 'nla'
     ignore_cert: bool = False
     spice_tls: bool = False
@@ -124,7 +126,7 @@ class InventoryImport(BaseModel):
     @classmethod
     def reject_credential_material(cls, value):
         if isinstance(value, dict) and isinstance(value.get('connections'), list):
-            allowed = set(DesktopInput.model_fields)
+            allowed = set(DesktopInput.model_fields) - {'password', 'clear_password'}
             for conn in value['connections']:
                 if isinstance(conn, dict) and set(conn) - allowed:
                     raise ValueError('Connection export contains unknown fields; credentials not imported')
@@ -291,12 +293,12 @@ def consume_ticket(token: str, cookie: str = '') -> Ticket | None:
         return TICKETS.pop(token)
 
 
-def resolve_settings(row: dict, payload: TicketInput, vault_password) -> DesktopSettings:
+def resolve_settings(row: dict, payload: TicketInput, vault_password, saved_password=lambda *_: None) -> DesktopSettings:
     password = ''
     if row['auth_type'] == 'vault':
         password = vault_password(row['credential_ref'])
     elif row['auth_type'] == 'interactive':
-        password = payload.password or ''
+        password = payload.password or saved_password('desktop', row['id']) or ''
     return DesktopSettings(
         protocol=row['protocol'], host=row['host'], port=row['port'],
         username=row['username'], password=password, domain=row['domain'],
@@ -312,23 +314,31 @@ async def connect_guacd():
                                          4822)
 
 
-def install_desktops(app, dbconn, require_auth, session_from_ws, vault_password, audit):
+def install_desktops(app, dbconn, require_auth, session_from_ws, vault_password, audit, saved_password=None, put_saved_password=None):
     def fetch(did: str) -> dict:
         with dbconn() as db:
             row = db.execute('SELECT * FROM desktop_connections WHERE id=?', (did,)).fetchone()
         if not row:
             raise HTTPException(404, 'Desktop connection not found')
-        return desktop_row(row)
+        result = desktop_row(row)
+        with dbconn() as db:
+            result['has_saved_password'] = bool(db.execute(
+                "SELECT 1 FROM saved_passwords WHERE kind='desktop' AND entity_id=?", (did,)).fetchone())
+        return result
 
     @app.get('/api/desktops')
     def desktop_list(_=Depends(require_auth)):
         with dbconn() as db:
-            return [desktop_row(row) for row in db.execute(
+            records = [desktop_row(row) for row in db.execute(
                 'SELECT * FROM desktop_connections ORDER BY favorite DESC, environment, label COLLATE NOCASE')]
+            saved = {row['entity_id'] for row in db.execute("SELECT entity_id FROM saved_passwords WHERE kind='desktop'")}
+            for record in records:
+                record['has_saved_password'] = record['id'] in saved
+            return records
 
     @app.get('/api/desktops/export')
     def desktop_export(_=Depends(require_auth)):
-        fields = tuple(DesktopInput.model_fields)
+        fields = tuple(field for field in DesktopInput.model_fields if field not in ('password','clear_password'))
         with dbconn() as db:
             records = [{key: desktop_row(row)[key] for key in fields} for row in db.execute(
                 'SELECT * FROM desktop_connections ORDER BY label COLLATE NOCASE LIMIT ?',
@@ -385,6 +395,9 @@ def install_desktops(app, dbconn, require_auth, session_from_ws, vault_password,
                    'label','protocol','host','port','username','domain','environment','note',
                    'auth_type','credential_ref','security','ignore_cert','read_only',
                    'width','height','dpi','spice_tls','favorite')), now, now))
+        if put_saved_password:
+            with dbconn() as db:
+                put_saved_password(db, 'desktop', did, body.password, body.clear_password)
         audit('desktop.created', did)
         return fetch(did)
 
@@ -403,6 +416,9 @@ def install_desktops(app, dbconn, require_auth, session_from_ws, vault_password,
                   'label','protocol','host','port','username','domain','environment','note',
                   'auth_type','credential_ref','security','ignore_cert','read_only',
                   'width','height','dpi','spice_tls','favorite')), int(time.time()), did))
+        if put_saved_password:
+            with dbconn() as db:
+                put_saved_password(db, 'desktop', did, body.password, body.clear_password)
         audit('desktop.updated', did)
         return fetch(did)
 
@@ -436,13 +452,15 @@ def install_desktops(app, dbconn, require_auth, session_from_ws, vault_password,
                 TICKETS.pop(token, None)
         with dbconn() as db:
             db.execute('DELETE FROM desktop_connections WHERE id=?', (did,))
+        with dbconn() as db:
+            db.execute("DELETE FROM saved_passwords WHERE kind='desktop' AND entity_id=?", (did,))
         audit('desktop.deleted', did)
         return {'ok': True}
 
     @app.post('/api/desktops/{did}/ticket')
     def desktop_ticket(did: str, payload: TicketInput, response: Response, request: Request, _=Depends(require_auth)):
         record = fetch(did)
-        settings = resolve_settings(record, payload, vault_password)
+        settings = resolve_settings(record, payload, vault_password, saved_password or (lambda *_: None))
         with GUARD:
             cleanup_tickets()
             cleanup_spice_groups()

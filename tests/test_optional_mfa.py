@@ -33,5 +33,5 @@ def test_mfa_ui_exposes_scan_and_does_not_require_otp_by_default():
     from pathlib import Path
     source = (Path(__file__).resolve().parents[1] / 'static' / 'index.html').read_text()
     assert 'id="mfaQr"' in source
-    assert 'Authenticator code (only if you enabled MFA)' in source
+    assert 'id="loginTotpGroup" class="hidden"' in source
     assert 'Remote sessions will remain blocked' not in source

@@ -1,7 +1,7 @@
 'use strict';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { page: 'overview', assets: [], tabs: new Map(), currentTab: null, editing: null, vaultItems: [] };
+const state = { page: 'machines', assets: [], folders: [], machineHost: null, tabs: new Map(), currentTab: null, editing: null, vaultItems: [], sessionPasswords: new Map() };
 let toastTimer;
 let dockerMode = 'containers';
 let activeFileEdit = null;
@@ -43,26 +43,304 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
   }
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : response;
 }
+let dialogResolve = null;
+function askDialog({ title, description = '', label = '', value = '', secret = false, required = false, confirm = false, action = 'Continue' }) {
+  if (dialogResolve) return Promise.reject(Error('Another dialog is already active'));
+  const dialog = $('#inputDialog'), field = $('#inputDialogValue');
+  $('#inputDialogTitle').textContent = title;
+  $('#inputDialogDescription').textContent = description;
+  $('#inputDialogLabel').classList.toggle('hidden', confirm);
+  field.classList.toggle('hidden', confirm);
+  field.type = secret ? 'password' : 'text'; field.required = required && !confirm;
+  field.value = value; field.autocomplete = secret ? 'new-password' : 'off';
+  $('#inputDialogSubmit').textContent = action;
+  return new Promise(resolve => {
+    dialogResolve = resolve; dialog.showModal();
+    requestAnimationFrame(() => (confirm ? $('#inputDialogSubmit') : field).focus());
+  });
+}
+function finishDialog(result) {
+  const resolve = dialogResolve;
+  if (!resolve) return;
+  dialogResolve = null;
+  $('#inputDialog').close();
+  $('#inputDialogValue').value = '';
+  resolve(result);
+}
+async function confirmAction(title, description, action = 'Confirm') {
+  return (await askDialog({ title, description, confirm: true, action })) !== null;
+}
+async function promptCredential(asset) {
+  if (!asset || asset.auth_type !== 'interactive' || asset.has_saved_password) return '';
+  const existing = state.sessionPasswords.get(asset.id);
+  if (existing !== undefined) return existing;
+  const password = await askDialog({title:'Connect to ' + asset.label,
+    description:`SSH password for ${asset.username}@${asset.host}. This is kept only in browser memory for this login session unless you save a password in the machine editor.`,
+    label:'SSH password', secret:true, required:false, action:'Continue'});
+  if (password !== null) state.sessionPasswords.set(asset.id, password);
+  return password;
+}
+function initMachineWorkspace() {
+  for (const tab of ['terminals','desktops','files','docker','health']) {
+    const section = $('#page-' + tab), panel = $('#machinePanel-' + tab);
+    section.classList.remove('page', 'hidden');
+    section.classList.add('machine-subsection');
+    panel.append(section);
+  }
+  const vault = $('#page-vault');
+  vault.classList.remove('page', 'hidden'); vault.classList.add('integration-section');
+  $('#settingsIntegrationsPanel').append(vault);
+  for (const id of ['fileAsset','dockerAsset','healthAsset']) {
+    const field = $('#' + id);
+    field.closest('label')?.classList.add('machine-host-select');
+    field.tabIndex = -1;
+  }
+  $('#inputDialogForm').addEventListener('submit', event => {event.preventDefault(); finishDialog($('#inputDialogLabel').classList.contains('hidden') ? '' : $('#inputDialogValue').value);});
+  $('#inputDialogCancel').addEventListener('click', () => finishDialog(null));
+  $('#inputDialogClose').addEventListener('click', () => finishDialog(null));
+  $('#inputDialog').addEventListener('cancel', event => { event.preventDefault(); finishDialog(null); });
+  $('#settingsGeneralTab').addEventListener('click', () => settingsTab('general'));
+  $('#settingsIntegrationsTab').addEventListener('click', () => settingsTab('integrations'));
+  $('#settingsUpdatesTab').addEventListener('click', () => settingsTab('updates'));
+  $('#updateCheck').addEventListener('click', safeAsync(checkUpdateStatus));
+  $('#updateConfigForm').addEventListener('submit', safeAsync(saveUpdateConfig));
+  $('#updateInstall').addEventListener('click', safeAsync(installUpdate));
+  $('#updateJobRefresh').addEventListener('click', safeAsync(refreshUpdateJob));
+  $('#machineSearch').addEventListener('input', renderMachineDirectory);
+  $('#machineEnvironment').addEventListener('change', renderMachineDirectory);
+  $('#machineBack').addEventListener('click', () => navigate('machines'));
+  $('#machineEdit').addEventListener('click', () => {const a = machineAsset(); if (a) openAsset(a);});
+  $('#machineAddDesktop').addEventListener('click', () => {
+    openDesktopEditor();
+    $('#desktopForm').elements.host.value = state.machineHost || '';
+    $('#desktopForm').elements.label.value = machineTitle();
+  });
+  $$('[data-machine-tab]').forEach(b => b.addEventListener('click', () => machineTab(b.dataset.machineTab)));
+  $('#newFolder').addEventListener('click', () => showFolderDialog());
+  $('#folderClose').addEventListener('click', () => $('#folderDialog').close());
+  $('#folderCancel').addEventListener('click', () => $('#folderDialog').close());
+  $('#folderForm').addEventListener('submit', safeAsync(saveFolder));
+}
+function settingsTab(tab) {
+  for (const section of ['general','integrations','updates']) {
+    $('#settings' + section[0].toUpperCase() + section.slice(1) + 'Panel').classList.toggle('hidden', tab !== section);
+    $('#settings' + section[0].toUpperCase() + section.slice(1) + 'Tab').classList.toggle('active', tab === section);
+  }
+  if (tab === 'integrations') vaultStatus().catch(showError);
+  if (tab === 'updates') { checkUpdateStatus().catch(showError); refreshUpdateConfig().catch(showError); }
+}
+async function checkUpdateStatus() {
+  const btn = $('#updateCheck'); btn.disabled = true;
+  try {
+    const data = await api('/update/status');
+    $('#updateStatus').textContent = `Installed: ${data.installed} · ${data.message}`;
+  } finally { btn.disabled = false; }
+}
+async function refreshUpdateConfig() {
+  const [config] = await Promise.all([api('/update/config')]);
+  const select = $('#updateHost'); select.replaceChildren(new Option('Select an SSH machine', ''));
+  for (const asset of state.assets) select.add(new Option(asset.label + ' · ' + asset.host, asset.id));
+  select.value = config.asset_id || '';
+  $('#updateProject').value = config.project || '';
+  $('#updateDirectory').value = config.directory || '';
+  if (config.job) await refreshUpdateJob();
+}
+async function saveUpdateConfig(event) {
+  event.preventDefault();
+  const button = $('#updateConfigSave'); button.disabled = true;
+  try {
+    await api('/update/config', {method:'PUT',body:{
+      asset_id:$('#updateHost').value, compose_project:$('#updateProject').value,
+      repository_directory:$('#updateDirectory').value,
+      current_password:$('#updateConfigPassword').value}});
+    $('#updateConfigPassword').value = '';
+    toast('Update executor saved inside the appliance.'); await checkUpdateStatus();
+  } finally { button.disabled = false; }
+}
+async function installUpdate() {
+  const password = $('#updateInstallPassword').value;
+  if (!password) { toast('Enter your administrator password to authorize the update.',true); return; }
+  if (!await confirmAction('Install Switchyard update',
+    'The configured Docker host will fast-forward the Switchyard Git checkout, pull images and restart the Compose project. Active sessions will close.', 'Install update')) return;
+  const button = $('#updateInstall'); button.disabled = true;
+  try {
+    const result = await api('/update/install',{method:'POST',body:{current_password:password}});
+    $('#updateInstallPassword').value = '';
+    $('#updateJobLog').textContent = 'Update job scheduled: ' + result.job + '. Reconnect after the container restarts to view the result.';
+    toast('Update scheduled on the Docker host.');
+  } finally { button.disabled = false; }
+}
+async function refreshUpdateJob() {
+  const output = $('#updateJobLog'); output.textContent = 'Loading update log…';
+  const result = await api('/update/job');
+  output.textContent = result.job ? result.status.toUpperCase() + ' · ' + result.job + '\n' + (result.log || '') : 'No update has been scheduled.';
+}
+function normalizedHost(host) { return String(host || '').trim().toLowerCase(); }
+function machineAsset() { return state.assets.find(a => normalizedHost(a.host) === state.machineHost); }
+function machineDesktops() { return desktopRecords.filter(d => normalizedHost(d.host) === state.machineHost); }
+function machineTitle() { return machineAsset()?.label || machineDesktops()[0]?.label || state.machineHost || 'Machine'; }
+async function refreshFolders() {
+  state.folders = await api('/folders');
+  for (const select of [$('#assetFolder'),$('#folderParent')]) {
+    const selected = select.value;
+    select.replaceChildren(new Option(select.id === 'assetFolder' ? 'Unfiled' : 'Top level', ''));
+    for (const f of state.folders) select.add(new Option(f.name, f.id));
+    if ([...select.options].some(o => o.value === selected)) select.value = selected;
+  }
+  renderMachineDirectory();
+}
+function machines() {
+  const map = new Map();
+  for (const a of state.assets) {
+    const host = normalizedHost(a.host);
+    if (!map.has(host)) map.set(host, {host, ssh:[], desktops:[], folder_id:a.folder_id || ''});
+    map.get(host).ssh.push(a);
+  }
+  for (const d of desktopRecords) {
+    const host = normalizedHost(d.host);
+    if (!map.has(host)) map.set(host, {host, ssh:[], desktops:[], folder_id:''});
+    map.get(host).desktops.push(d);
+  }
+  return [...map.values()].sort((a,b) => (a.ssh[0]?.label || a.desktops[0]?.label || a.host).localeCompare(b.ssh[0]?.label || b.desktops[0]?.label || b.host));
+}
+function renderMachineDirectory() {
+  const target = $('#machineDirectory'); target.replaceChildren();
+  const query = ($('#machineSearch')?.value || '').trim().toLowerCase();
+  const all = machines();
+  const environmentSelect = $('#machineEnvironment'); const selectedEnvironment = environmentSelect.value;
+  const environments = [...new Set(all.flatMap(m => [...m.ssh.map(a=>a.environment),...m.desktops.map(d=>d.environment)]).filter(Boolean))].sort();
+  environmentSelect.replaceChildren(new Option('All environments',''));
+  for (const environment of environments) environmentSelect.add(new Option(environment,environment));
+  if (environments.includes(selectedEnvironment)) environmentSelect.value = selectedEnvironment;
+  const matches = all.filter(m => (!environmentSelect.value || [...m.ssh,...m.desktops].some(a=>a.environment === environmentSelect.value)) && [m.host, m.ssh[0]?.label, m.desktops[0]?.label, m.ssh[0]?.environment,
+    state.folders.find(f => f.id === m.folder_id)?.name].join(' ').toLowerCase().includes(query));
+  $('#machineCount').textContent = `${matches.length} of ${all.length} machines`;
+  if (!matches.length) {
+    target.append(node('div','machine-empty',query ? 'No machines match your search.' : 'No machines yet. Add a machine or desktop connection to start your inventory.'));
+    return;
+  }
+  const folders = new Map([['',[]], ...state.folders.map(f=>[f.id,[]])]);
+  for (const machine of matches) (folders.get(machine.folder_id) || folders.get('')).push(machine);
+  const renderOne = machine => {
+    const name = machine.ssh[0]?.label || machine.desktops[0]?.label || machine.host;
+    const el = button('', 'machine-entry', () => openMachine(machine.host));
+    const left = node('span','machine-entry-main');
+    left.append(node('strong','', name), node('small','mono',machine.host));
+    const types = node('span','machine-protocols');
+    if (machine.ssh.length) types.append(node('span','protocol-label','SSH · SFTP'));
+    for (const protocol of [...new Set(machine.desktops.map(d => d.protocol))]) types.append(node('span','protocol-label', protocol.toUpperCase()));
+    el.append(node('span','machine-symbol','▣'),left,types,node('span','machine-chevron','→'));
+    return el;
+  };
+  const renderFolder = (folderId, depth = 0, visited = new Set()) => {
+    if (visited.has(folderId) || depth > 12) return;
+    visited.add(folderId);
+    const children = state.folders.filter(f => (f.parent_id || '') === folderId);
+    const list = folders.get(folderId) || [];
+    if (folderId) {
+      const f = state.folders.find(x => x.id === folderId);
+      if (!f) return;
+      const heading = node('div','machine-folder-heading');
+      const title = node('strong','', '▤  ' + f.name);
+      heading.append(title,
+        button('Rename','mini-btn', () => showFolderDialog(f)),
+        button('Delete','mini-btn danger', async () => {
+          if (!await confirmAction('Delete folder',`Delete “${f.name}”? Empty folders only.`, 'Delete')) return;
+          await api('/folders/' + f.id,{method:'DELETE'}); await refreshFolders();
+        }));
+      target.append(heading);
+    } else if (list.length) target.append(node('h2','machine-group-label','Unfiled machines'));
+    for (const item of list) target.append(renderOne(item));
+    for (const f of children) renderFolder(f.id,depth+1,new Set(visited));
+  };
+  renderFolder('');
+}
+function openMachine(host) {
+  state.machineHost = normalizedHost(host);
+  const a = machineAsset();
+  $('#machineTitle').textContent = machineTitle(); $('#machineAddress').textContent = state.machineHost;
+  $('#machineFolderLabel').textContent = state.folders.find(f => f.id === a?.folder_id)?.name || 'MACHINE PROFILE';
+  $('#machineEdit').disabled = !a;
+  for (const id of ['fileAsset','dockerAsset','healthAsset']) if (a) $('#' + id).value = a.id;
+  $('#filePath').value = '.';
+  renderMachineOverview(); renderDesktopList();
+  navigate('machine'); machineTab('overview');
+}
+function renderMachineOverview() {
+  const a = machineAsset(), ds = machineDesktops(), target = $('#machineOverviewContent');
+  target.replaceChildren();
+  const intro = node('div','profile-summary');
+  intro.append(node('h2','',machineTitle()),node('p','',a?.note || ds[0]?.note || 'No description saved. Add notes in the connection editor.'));
+  const actions = node('div','profile-actions');
+  if (a) actions.append(button('Open SSH terminal','action-primary', () => {Promise.resolve(connect(a.id)).catch(showError);}),
+    button('Browse files','action-quiet', () => machineTab('files')),
+    button('Inspect Docker','action-quiet', () => machineTab('docker')),
+    button('Check health','action-quiet', () => machineTab('health')));
+  for (const d of ds) actions.append(button(`Open ${d.protocol.toUpperCase()} · ${d.label}`,'action-quiet', () => {Promise.resolve(openDesktop(d)).catch(showError);}));
+  if (!a) intro.append(node('p','profile-hint','No SSH connection configured for this host. Add an SSH machine profile to enable files, Docker and health.'));
+  target.append(intro, actions);
+}
+function machineTab(tab) {
+  const sshRequired = ['terminals','files','docker','health'].includes(tab);
+  if (sshRequired && !machineAsset()) { toast('Configure SSH on this machine to use this tool.',true); return; }
+  for (const id of ['overview','terminals','desktops','files','docker','health']) {
+    $('#machinePanel-' + id).classList.toggle('hidden', tab !== id);
+    const button = $(`[data-machine-tab="${id}"]`);
+    button.classList.toggle('active', tab === id);
+    button.setAttribute('aria-current',tab === id ? 'page' : 'false');
+    button.disabled = id !== 'overview' && id !== 'desktops' && !machineAsset();
+  }
+  state.machineTab = tab;
+  if (tab === 'files') browseFiles().catch(showError);
+  if (tab === 'docker') refreshDocker().catch(showError);
+  if (tab === 'health') refreshHealthHistory().catch(showError);
+  if (tab === 'desktops') { refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); requestAnimationFrame(() => fitDesktop(desktopCurrent())); }
+  if (tab === 'terminals' && state.currentTab) requestAnimationFrame(() => state.tabs.get(state.currentTab)?.fit.fit());
+}
+function showFolderDialog(folder = null) {
+  $('#folderForm').reset(); $('#folderForm').dataset.edit = folder?.id || '';
+  $('#folderDialogTitle').textContent = folder ? 'Edit folder' : 'New folder';
+  $('#folderName').value = folder?.name || '';
+  $('#folderParent').value = folder?.parent_id || '';
+  $('#folderDialog').showModal();
+}
+async function saveFolder(event) {
+  event.preventDefault();
+  const form = event.target, id = form.dataset.edit;
+  await api('/folders' + (id ? '/' + id : ''),{method:id?'PUT':'POST',body:{name:$('#folderName').value.trim(),parent_id:$('#folderParent').value || null}});
+  $('#folderDialog').close(); await refreshFolders(); toast(id ? 'Folder updated.' : 'Folder created.');
+}
+async function refreshLoginOptions() {
+  try {const options = await api('/login/options'); $('#loginTotpGroup').classList.toggle('hidden', !options.mfa_required); $('#loginTotp').required = !!options.mfa_required;}
+  catch {$('#loginTotpGroup').classList.add('hidden'); $('#loginTotp').required = false;}
+}
+
 function setLogin() {
   $('#setup').classList.add('hidden'); $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden');
   for (const tab of state.tabs.values()) tab.ws?.close();
-  state.tabs.clear(); state.currentTab = null; closeAllDesktops();
+  state.tabs.clear(); state.currentTab = null; state.sessionPasswords.clear(); closeAllDesktops(); refreshLoginOptions();
 }
 async function setShell() {
   $('#setup').classList.add('hidden'); $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
-  await refreshAssets(); navigate('overview');
+  await refreshFolders(); await refreshAssets(); await refreshDesktops(); navigate('machines');
 }
 async function refreshAssets() {
   state.assets = await api('/assets'); renderAssets(); renderQuick(); renderFileSelect(); renderDockerSelect(); renderHealthSelect();
+  renderMachineDirectory();
   const info = await api('/overview');
   $('#metricAssets').textContent = info.assets;
   $('#metricGroups').textContent = info.environments;
   $('#metricEvents').textContent = info.audit_events;
 }
 function navigate(page) {
+  if (page === 'vault') { navigate('settings'); settingsTab('integrations'); return; }
+  if (['terminals','desktops','files','docker','health'].includes(page)) {
+    if (!state.machineHost) {navigate('machines'); return;}
+    navigate('machine'); machineTab(page); return;
+  }
   state.page = page;
   $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
-  $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+  $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page || (page === 'machine' && el.dataset.page === 'machines')));
   $('#bread').textContent = ({ overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
   if (page === 'desktops') { refreshDesktops().catch(showError); refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); fitDesktop(desktopCurrent()); }
   if (page === 'runbooks') refreshRunbooks().catch(showError);
@@ -70,7 +348,7 @@ function navigate(page) {
   if (page === 'vault') vaultStatus().catch(showError);
   if (page === 'trust') refreshHosts().catch(showError);
   if (page === 'keys') refreshKeys().catch(showError);
-  if (page === 'settings') { refreshMfaStatus().catch(showError); refreshNetwork().catch(showError); }
+  if (page === 'settings') { settingsTab('general'); refreshMfaStatus().catch(showError); refreshNetwork().catch(showError); }
   if (page === 'activity') refreshAudit().catch(showError);
   if (page === 'terminals' && state.currentTab) requestAnimationFrame(() => state.tabs.get(state.currentTab)?.fit.fit());
 }
@@ -78,7 +356,7 @@ function renderQuick() {
   const target = $('#quickAssets'); target.replaceChildren();
   if (!state.assets.length) { target.append(node('div', 'empty-state', 'No saved assets. Add your first SSH connection to begin.')); return; }
   for (const asset of state.assets.slice(0, 6)) {
-    const el = button('', 'quick-asset', () => connect(asset.id));
+    const el = button('', 'quick-asset', () => openMachine(asset.host));
     el.append(node('span', 'env', asset.environment || 'UNASSIGNED'), node('h3', '', asset.label), node('div', 'host', asset.username + '@' + asset.host + ':' + asset.port), node('span', 'arrow', '↗'));
     target.append(el);
   }
@@ -110,39 +388,41 @@ function openAsset(asset = null) {
       else input.value = value;
     }
   }
+  $('#assetPassword').value = '';
+  $('#assetSavedPasswordState').textContent = asset?.has_saved_password ? 'A password is saved. Leave this field empty to keep it.' : 'Encrypted in the persistent /data volume; never returned to browsers.';
+  $('#assetFolder').value = asset?.folder_id || '';
   syncAuthFields(); $('#assetDialog').showModal();
 }
 function syncAuthFields() {
   const auth = $('#assetAuth').value;
   $('#credentialGroup').classList.toggle('hidden', auth !== 'vault');
   $('#keyGroup').classList.toggle('hidden', auth !== 'key');
+  $('#assetPasswordGroup').classList.toggle('hidden',auth !== 'interactive');
 }
 async function saveAsset(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.target));
   data.port = Number(data.port); data.use_tmux = event.target.elements.use_tmux.checked;
-  data.credential_ref ||= ''; data.key_file ||= '';
+  data.credential_ref ||= ''; data.key_file ||= ''; data.folder_id ||= '';
+  data.clear_password = event.target.elements.clear_password.checked;
+  if (!data.password) delete data.password;
   const editing = state.editing;
   await api('/assets' + (editing ? '/' + editing : ''), { method: editing ? 'PUT' : 'POST', body: data });
-  $('#assetDialog').close(); await refreshAssets(); toast(editing ? 'Connection updated.' : 'Connection added.');
+  $('#assetDialog').close(); await refreshAssets(); if (state.machineHost) renderMachineOverview(); toast(editing ? 'Connection updated.' : 'Connection added.');
 }
 async function removeAsset(asset) {
-  if (!confirm(`Delete ${asset.label}? This removes the saved connection but does not delete remote files.`)) return;
-  await api('/assets/' + asset.id, { method: 'DELETE' }); await refreshAssets(); toast('Connection removed.');
+  if (!await confirmAction('Remove machine',`Delete ${asset.label}? Remote files will not be modified.`,'Delete machine')) return;
+  await api('/assets/' + asset.id, { method: 'DELETE' }); await refreshAssets(); renderMachineDirectory(); toast('Connection removed.');
 }
-function promptPassword(asset) {
-  if (asset.auth_type !== 'interactive') return '';
-  const pass = prompt(`SSH password for ${asset.username}@${asset.host}. For SSH key authentication, choose Mounted SSH key on this asset.`);
-  return pass;
-}
-function connect(aid) {
+async function promptPassword(asset) { return promptCredential(asset); }
+async function connect(aid) {
   const asset = state.assets.find(a => a.id === aid);
   if (!asset) { toast('Asset was not found.', true); return; }
-  const password = promptPassword(asset);
+  const password = await promptPassword(asset);
   if (password === null) return;
   if (!window.Terminal || !window.FitAddon) { toast('Terminal assets are missing from the container.', true); return; }
   const id = crypto.randomUUID();
-  const tab = { id, asset, ws: null, password, terminal: new window.Terminal({ cursorBlink: true, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: 14, lineHeight: 1.25, scrollback: 5000, theme: { background: '#1d2624', foreground: '#e9e6dc', cursor: '#e8a477', selectionBackground: '#527f70' } }), fit: new window.FitAddon.FitAddon() };
+  const tab = { id, asset, ws: null, password, terminal: new window.Terminal({ cursorBlink: true, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: 14, lineHeight: 1.25, scrollback: 5000, theme: { background: '#202027', foreground: '#F5F6F9', cursor: '#E24E62', selectionBackground: '#58586A' } }), fit: new window.FitAddon.FitAddon() };
   tab.terminal.loadAddon(tab.fit);
   state.tabs.set(id, tab); state.currentTab = id;
   navigate('terminals'); renderTabs();
@@ -179,18 +459,18 @@ function renderTabs() {
   $$('.terminal-host', panels).forEach(el => el.classList.toggle('active', el.id === 'term-' + state.currentTab));
   $('#terminalCount').textContent = state.tabs.size;
 }
-function selectTab(id) { state.currentTab = id; navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
+function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
 function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = state.tabs.keys().next().value || null; renderTabs(); if (state.currentTab) selectTab(state.currentTab); }
 function renderFileSelect() {
   const select = $('#fileAsset'); const selected = select.value; select.replaceChildren(node('option', '', 'Select an asset'));
   for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; select.append(opt); }
   if (state.assets.some(a => a.id === selected)) select.value = selected;
 }
-function fileAuth(a) { const pass = promptPassword(a); return pass === null ? null : pass ? { 'X-SSH-Password': pass } : {}; }
+async function fileAuth(a) { const pass = await promptPassword(a); return pass === null ? null : pass ? { 'X-SSH-Password': pass } : {}; }
 async function browseFiles() {
   const a = state.assets.find(x => x.id === $('#fileAsset').value);
   if (!a) { toast('Choose a remote host first.', true); return; }
-  const headers = fileAuth(a); if (headers === null) return;
+  const headers = await fileAuth(a); if (headers === null) return;
   $('#fileList').replaceChildren(node('div', 'empty-state', 'Opening remote directory…'));
   const data = await api(`/assets/${a.id}/files?path=${encodeURIComponent($('#filePath').value || '.')}`, { headers });
   $('#filePath').value = data.path; $('#fileLocation').textContent = a.host + ' : ' + data.path;
@@ -213,7 +493,7 @@ async function browseFiles() {
 }
 function sizeLabel(bytes) { if (bytes < 1024) return bytes + ' B'; if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'; return (bytes / (1024 * 1024)).toFixed(1) + ' MB'; }
 async function downloadFile(a, path) {
-  const headers = fileAuth(a); if (headers === null) return;
+  const headers = await fileAuth(a); if (headers === null) return;
   const response = await api(`/assets/${a.id}/download?path=${encodeURIComponent(path)}`, { headers });
   const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = node('a');
   link.href = url; link.download = path.split('/').pop() || 'file'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -224,7 +504,7 @@ async function uploadFile(event) {
   if (!a) { toast('Select a remote host first.', true); return; }
   const file = event.target.files?.[0]; if (!file) return;
   if (file.size > 64 * 1024 * 1024) { toast('File exceeds 64 MiB limit.', true); return; }
-  const headers = fileAuth(a); if (headers === null) return;
+  const headers = await fileAuth(a); if (headers === null) return;
   const body = new FormData(); body.set('file', file);
   await api(`/assets/${a.id}/upload?path=${encodeURIComponent($('#filePath').value || '.')}`, { method: 'POST', body, headers });
   event.target.value = ''; toast('File uploaded; no existing remote file was overwritten.'); await browseFiles();
@@ -232,25 +512,25 @@ async function uploadFile(event) {
 async function createRemoteFolder() {
   const a = state.assets.find(x => x.id === $('#fileAsset').value);
   if (!a) { toast('Choose a remote host.', true); return; }
-  const name = prompt('New directory name:'); if (!name) return;
+  const name = await askDialog({title:'Create remote folder',description:'Create a directory in ' + ($('#filePath').value || '.'),label:'Folder name',required:true,action:'Create folder'}); if (!name) return;
   if (name === '.' || name === '..' || name.includes('/') || name.includes('\\')) { toast('Choose a single directory name.', true); return; }
-  const headers = fileAuth(a); if (headers === null) return;
+  const headers = await fileAuth(a); if (headers === null) return;
   const path = ($('#filePath').value === '/' ? '' : $('#filePath').value) + '/' + name;
   await api(`/assets/${a.id}/files/mkdir`, { method: 'POST', body: { path }, headers });
   toast('Remote directory created.'); await browseFiles();
 }
 async function renameRemote(a, path) {
-  const oldName = path.split('/').pop(); const name = prompt('Rename remote item to:', oldName);
+  const oldName = path.split('/').pop(); const name = await askDialog({title:'Rename remote item',description:path,label:'New filename',value:oldName,required:true,action:'Rename'});
   if (!name || name === oldName) return;
   if (name === '..' || name === '.' || name.includes('/') || name.includes('\\')) { toast('Enter a single file or directory name.', true); return; }
-  const headers = fileAuth(a); if (headers === null) return;
+  const headers = await fileAuth(a); if (headers === null) return;
   const destination = path.substring(0, path.lastIndexOf('/') + 1) + name;
   await api(`/assets/${a.id}/files/rename`, { method: 'POST', body: { source: path, destination }, headers });
   toast('Remote item renamed.'); await browseFiles();
 }
 async function deleteRemote(a, path, directory) {
-  if (!confirm(`Delete remote ${directory ? 'directory' : 'file'} ${path}? This cannot be undone. Directories must be empty.`)) return;
-  const headers = fileAuth(a); if (headers === null) return;
+  if (!await confirmAction('Delete remote item',`Permanently remove ${path}? Directories must be empty.`, 'Delete')) return;
+  const headers = await fileAuth(a); if (headers === null) return;
   await api(`/assets/${a.id}/files?directory=${directory}`, { method: 'DELETE', body: { path }, headers });
   toast('Remote item deleted.'); await browseFiles();
 }
@@ -267,7 +547,7 @@ function detailLine(label, value) {
 async function refreshDocker() {
   const a = state.assets.find(x => x.id === $('#dockerAsset').value);
   if (!a) { toast('Select a Docker host.', true); return; }
-  const headers = fileAuth(a); if (headers === null) return;
+  const headers = await fileAuth(a); if (headers === null) return;
   $('#dockerList').replaceChildren(node('div', 'empty-state', 'Inspecting Docker workloads over SSH…'));
   $('#dockerDetails').classList.add('hidden');
   let summary;
@@ -291,8 +571,8 @@ async function refreshDocker() {
       const actions = node('div', 'asset-row-actions');
       for (const action of ['start', 'stop', 'restart']) {
         actions.append(button(action[0].toUpperCase() + action.slice(1), 'mini-btn' + (action === 'stop' ? ' danger' : ''), safeAsync(async () => {
-          if (!confirm(`${action.toUpperCase()} Docker Compose project ${item.name} on ${a.host}?`)) return;
-          const auth = fileAuth(a); if (auth === null) return;
+          if (!await confirmAction('Manage Compose stack', `${action.toUpperCase()} ${item.name} on ${a.host}?`, action.toUpperCase())) return;
+          const auth = await fileAuth(a); if (auth === null) return;
           await api(`/assets/${a.id}/docker/stacks/action`, {method:'POST', headers:auth, body:{project:item.name, action}});
           toast('Compose project ' + action + ' completed.'); await refreshDocker();
         })));
@@ -310,8 +590,8 @@ async function refreshDocker() {
     actions.append(button('Inspect', 'mini-btn', () => showDockerDetails(a, item.id)));
     for (const action of ['start', 'stop', 'restart']) {
       const b = button(action[0].toUpperCase() + action.slice(1), 'mini-btn' + (action === 'stop' ? ' danger' : ''), async () => {
-        if (!confirm(`${action.toUpperCase()} container ${item.name || item.id.slice(0, 12)} on ${a.host}?`)) return;
-        const auth = fileAuth(a); if (auth === null) return;
+        if (!await confirmAction('Manage container', `${action.toUpperCase()} ${item.name || item.id.slice(0, 12)} on ${a.host}?`, action.toUpperCase())) return;
+        const auth = await fileAuth(a); if (auth === null) return;
         try { await api(`/assets/${a.id}/docker/action`, { method: 'POST', headers: auth, body: { action, container_id: item.id } }); toast('Docker ' + action + ' completed.'); await refreshDocker(); } catch (error) { showError(error); }
       });
       b.disabled = !/^[0-9a-f]{12,64}$/i.test(item.id) || (action === 'start' && /^up\b/i.test(item.status)) || (action === 'stop' && !/^up\b/i.test(item.status));
@@ -321,7 +601,7 @@ async function refreshDocker() {
   }
 }
 async function showDockerDetails(asset, id) {
-  const headers = fileAuth(asset); if (headers === null) return;
+  const headers = await fileAuth(asset); if (headers === null) return;
   const pane = $('#dockerDetails'); const content = $('#dockerDetailContent');
   pane.classList.remove('hidden'); content.replaceChildren(node('div', 'empty-state', 'Loading container inspection…'));
   $('#dockerDetailTitle').textContent = 'Inspecting ' + id.slice(0, 12);
@@ -347,7 +627,7 @@ async function showDockerDetails(asset, id) {
     tailLabel.append(tail);
     const output = node('pre', 'log-console', 'Load logs to inspect recent output.');
     controls.append(tailLabel, button('Load logs', 'action-small', async () => {
-      const auth = fileAuth(asset); if (auth === null) return;
+      const auth = await fileAuth(asset); if (auth === null) return;
       output.textContent = 'Loading recent container logs…';
       try {
         const result = await api(`/assets/${asset.id}/docker/containers/${id}/logs?tail=${tail.value}`, { headers: auth });
@@ -382,7 +662,7 @@ async function refreshHosts() {
   for (const host of hosts) {
     const row = node('div', 'asset-row'); row.append(node('strong', '', host.host), node('span', 'mono', host.algorithm), node('span', 'mono', host.fingerprint),
       button('Revoke', 'mini-btn danger', safeAsync(async () => {
-        if (!confirm(`Revoke trusted fingerprint ${host.fingerprint} for ${host.host}? Connections using it will fail until another fingerprint is verified.`)) return;
+        if (!await confirmAction('Revoke SSH trust',`Remove ${host.fingerprint} from ${host.host}? Connections will fail until you trust the new fingerprint.`, 'Revoke')) return;
         await api('/hosts/revoke', { method: 'POST', body: host }); toast('Host trust revoked.'); await refreshHosts();
       }))); target.append(row);
   }
@@ -394,7 +674,7 @@ async function scanHost(event) {
   const target = $('#scanResult'); target.classList.remove('hidden'); target.replaceChildren();
   target.append(node('strong', '', 'UNVERIFIED REMOTE KEY · ' + key.host + ':' + key.port), node('code', '', key.fingerprint), node('p', '', 'Compare this fingerprint against a trusted out-of-band source (server console, administrator, or known-good inventory). Do not approve an unexpected fingerprint.'));
   target.append(button('I verified this fingerprint — trust host', 'action-primary', async () => {
-    if (!confirm('Have you independently verified ' + key.fingerprint + ' for ' + key.host + '?')) return;
+    if (!await confirmAction('Trust SSH fingerprint', 'Have you verified ' + key.fingerprint + ' for ' + key.host + ' using another trusted channel?', 'Trust key')) return;
     await api('/hosts/trust', { method: 'POST', body: { host: key.host, port: key.port, key_type: key.key_type, public_key: key.public_key } });
     target.classList.add('hidden'); scannedHost = null; toast('Host key saved.'); refreshHosts().catch(showError);
   }));
@@ -412,7 +692,7 @@ async function refreshKeys() {
       await navigator.clipboard.writeText(item.public_key); toast('Public key copied.');
     })));
     const remove = button('Delete', 'mini-btn danger', safeAsync(async () => {
-      if (!confirm(`Permanently delete private key ${item.name}? This cannot be undone.`)) return;
+      if (!await confirmAction('Delete private key', `Permanently delete ${item.name}? This cannot be undone.`, 'Delete key')) return;
       await api(`/keys/${encodeURIComponent(item.name)}`, { method: 'DELETE' }); await refreshKeys(); toast('SSH key deleted.');
     }));
     remove.disabled = item.used_by > 0;
@@ -477,7 +757,7 @@ async function refreshHealthHistory() {
 async function checkHealth() {
   const a = state.assets.find(a => a.id === $('#healthAsset').value);
   if (!a) { toast('Select a Linux host first.', true); return; }
-  const headers = fileAuth(a); if (headers === null) return;
+  const headers = await fileAuth(a); if (headers === null) return;
   $('#healthRefresh').disabled = true; $('#healthStatus').textContent = 'Checking Linux host over SSH…';
   try {
     const data = await api(`/assets/${a.id}/health`, { headers });
@@ -494,7 +774,7 @@ async function checkHealth() {
   finally { $('#healthRefresh').disabled = false; await refreshHealthHistory(); }
 }
 async function openFileEditor(asset, path) {
-  const headers = fileAuth(asset); if (headers === null) return;
+  const headers = await fileAuth(asset); if (headers === null) return;
   const dialog = $('#fileEditorDialog');
   $('#fileEditorTitle').textContent = 'Opening text file';
   $('#fileEditorPath').textContent = asset.label + ' · ' + path;
@@ -512,8 +792,8 @@ async function saveFileEditor(event) {
   event.preventDefault();
   if (!activeFileEdit) return;
   const data = activeFileEdit;
-  if (!confirm('Save changes to ' + data.path + ' on ' + data.asset.host + '? This replaces the remote file.')) return;
-  const headers = fileAuth(data.asset); if (headers === null) return;
+  if (!await confirmAction('Save remote file', 'Replace ' + data.path + ' on ' + data.asset.host + '?', 'Save file')) return;
+  const headers = await fileAuth(data.asset); if (headers === null) return;
   $('#saveFileEdit').disabled = true;
   try {
     const result = await api(`/assets/${data.aid}/files/edit`, {method:'PUT', headers,
@@ -546,8 +826,8 @@ function editRunbook(item) {
 async function executeRunbook(item, select) {
   const asset = state.assets.find(a => a.id === select.value);
   if (!asset) { toast('Choose a target asset.', true); return; }
-  if (item.requires_confirmation && !confirm(`Run “${item.name}” on ${asset.label} (${asset.host})?\n\n${item.command}`)) return;
-  const headers = fileAuth(asset); if (headers === null) return;
+  if (item.requires_confirmation && !await confirmAction('Execute runbook',`${item.name} on ${asset.label} (${asset.host})?\n${item.command}`, 'Execute')) return;
+  const headers = await fileAuth(asset); if (headers === null) return;
   $('#runbookOutput').textContent = 'Executing on ' + asset.host + '…';
   try {
     const result = await api(`/runbooks/${item.id}/execute`, {method:'POST', headers, body:{asset_id:asset.id, confirm:true}});
@@ -582,7 +862,7 @@ async function refreshRunbooks() {
     controls.append(button('Run', 'mini-btn', safeAsync(() => executeRunbook(item, select))),
       button('Edit', 'mini-btn', () => editRunbook(item)),
       button('Delete', 'mini-btn danger', safeAsync(async () => {
-        if (!confirm('Delete runbook ' + item.name + '? Execution history will be retained.')) return;
+        if (!await confirmAction('Delete runbook', 'Delete ' + item.name + '? Execution history is retained.', 'Delete')) return;
         await api('/runbooks/' + item.id, {method:'DELETE'});
         if (editingRunbookId === item.id) resetRunbookForm();
         await refreshRunbooks(); toast('Runbook deleted.');
@@ -599,6 +879,7 @@ let desktopTabs = new Map();
 let currentDesktopTab = null;
 
 function desktopAuthChange() {
+  $('#desktopPasswordGroup').classList.toggle('hidden', $('#desktopAuth').value !== 'interactive');
   $('#desktopVaultGroup').classList.toggle('hidden', $('#desktopAuth').value !== 'vault');
 }
 function desktopProtocolChange() {
@@ -629,6 +910,8 @@ function openDesktopEditor(record = null) {
     });
   }
   $('#desktopModalTitle').textContent = record ? 'Edit desktop' : 'Add a desktop';
+  $('#desktopPassword').value = '';
+  $('#desktopSavedPasswordState').textContent = record?.has_saved_password ? 'Saved credential will be retained unless replaced.' : 'Encrypted in appliance storage.';
   desktopAuthChange(); desktopProtocolChange(); $('#desktopDialog').showModal();
 }
 async function saveDesktop(event) {
@@ -642,6 +925,8 @@ async function saveDesktop(event) {
     data.spice_tls = form.elements.spice_tls.checked && data.protocol === 'spice';
     data.read_only = form.elements.read_only.checked && data.protocol !== 'spice';
     data.credential_ref ||= '';
+    data.clear_password = form.elements.clear_password.checked;
+    if (!data.password) delete data.password;
     data.favorite = desktopEditing ? !!desktopRecords.find(item => item.id === desktopEditing)?.favorite : false;
     if (data.protocol !== 'rdp') { data.domain = ''; data.security = 'nla'; data.ignore_cert = false; }
     await api('/desktops' + (desktopEditing ? '/' + desktopEditing : ''), {
@@ -652,14 +937,14 @@ async function saveDesktop(event) {
   } finally { submit.disabled = false; }
 }
 async function deleteDesktop(record) {
-  if (!confirm(`Delete saved ${record.protocol.toUpperCase()} connection “${record.label}”? The remote computer will not be modified.`)) return;
+  if (!await confirmAction('Remove desktop connection',`Delete ${record.label}? This will not modify the remote computer.`, 'Delete connection')) return;
   await api('/desktops/' + record.id, { method: 'DELETE' });
   await refreshDesktops(); toast('Saved desktop removed.');
 }
 function renderDesktopList() {
   const query = $('#desktopSearch').value.toLowerCase().trim();
-  const visible = desktopRecords.filter(x => [x.label, x.host, x.username, x.environment, x.protocol].join(' ').toLowerCase().includes(query));
-  $('#desktopTotal').textContent = `${visible.length} of ${desktopRecords.length} desktops`;
+  const visible = desktopRecords.filter(x => normalizedHost(x.host) === state.machineHost && [x.label, x.host, x.username, x.environment, x.protocol].join(' ').toLowerCase().includes(query));
+  $('#desktopTotal').textContent = `${visible.length} connections for this machine`;
   $('#desktopCount').textContent = desktopRecords.length;
   const target = $('#desktopList'); target.replaceChildren();
   if (!visible.length) {
@@ -724,7 +1009,7 @@ async function refreshDesktopGateway() {
 }
 async function refreshDesktops() {
   await refreshDesktopGateway();
-  desktopRecords = await api('/desktops'); renderDesktopList();
+  desktopRecords = await api('/desktops'); renderDesktopList(); renderMachineDirectory(); if (state.machineHost) renderMachineOverview();
 }
 async function refreshDesktopActive() {
   const sessions = await api('/desktops/sessions/active');
@@ -740,7 +1025,7 @@ async function refreshDesktopActive() {
       node('small','', session.protocol.toUpperCase() + ' · Active connection'));
     const started = node('div','mono',new Date(session.started_at*1000).toLocaleString());
     const disconnect = button('Disconnect session','mini-btn danger',async function () {
-      if (!confirm(`Disconnect “${session.label}” from the remote desktop now?`)) return;
+      if (!await confirmAction('Disconnect remote desktop',`Disconnect “${session.label}” now?`, 'Disconnect')) return;
       this.disabled = true;
       try {
         await api(`/desktops/sessions/${session.id}/disconnect`,{method:'POST',body:{}});
@@ -800,8 +1085,9 @@ function renderDesktopTabs() {
 }
 function selectDesktopTab(id) {
   if (!desktopTabs.has(id)) return;
-  currentDesktopTab = id; navigate('desktops'); renderDesktopTabs();
-  const session = desktopCurrent();
+  currentDesktopTab = id; const session = desktopTabs.get(id);
+  if (session?.record?.host) state.machineHost = normalizedHost(session.record.host);
+  navigate('desktops'); renderDesktopTabs();
   requestAnimationFrame(() => { fitDesktop(session); session.surface.focus(); });
 }
 function closeDesktopTab(id) {
@@ -834,7 +1120,7 @@ async function openDesktop(record) {
   }
   let password;
   if (record.auth_type === 'interactive') {
-    password = prompt(`Password for ${record.protocol.toUpperCase()} on ${record.host}. Leave blank for passwordless remote access.`);
+    password = record.has_saved_password ? undefined : await askDialog({title:'Desktop credentials',description:`Password for ${record.protocol.toUpperCase()} on ${record.host}.`,label:'Password',secret:true,action:'Connect'});
     if (password === null) return;
   }
   if (desktopTabs.size >= 8) throw Error('At most 8 remote desktops can remain connected.');
@@ -956,9 +1242,9 @@ function desktopCAD() {
   for (const key of [0xffe3, 0xffe9, 0xffff]) client.sendKeyEvent(1, key);
   for (const key of [0xffff, 0xffe9, 0xffe3]) client.sendKeyEvent(0, key);
 }
-function desktopSendClipboard() {
+async function desktopSendClipboard() {
   const session = desktopCurrent(); if (!session || session.record.read_only) return;
-  const text = prompt('Text to send to the remote desktop clipboard (max 16 KiB):');
+  const text = await askDialog({title:'Send clipboard text',description:'Send text to the remote desktop. Up to 16 KiB.',label:'Clipboard text',action:'Send'});
   if (text === null) return;
   if (new TextEncoder().encode(text).length > 16384) { toast('Clipboard text exceeds 16 KiB.', true); return; }
   session.client.setClipboard(text); toast('Text sent to remote clipboard.');
@@ -988,7 +1274,7 @@ async function desktopCopyRemoteClipboard() {
     await navigator.clipboard.writeText(session.clipboardText);
     toast('Remote text copied to the local clipboard.');
   } catch {
-    prompt('Select and copy this remote clipboard text:', session.clipboardText);
+    const text = await askDialog({title:'Copy remote clipboard',description:'Select the text in this dialog and copy it manually.',label:'Remote text',value:session.clipboardText,action:'Close'});
   }
 }
 function bindDesktopUI() {
@@ -1026,7 +1312,7 @@ function bindDesktopUI() {
       const parsed = JSON.parse(await file.text());
       if (parsed.format !== 'switchyard-desktops-v1' || !Array.isArray(parsed.connections))
         throw Error('Not a Switchyard desktop inventory export.');
-      if (!confirm(`Import ${parsed.connections.length} new desktops? Existing entries will not be overwritten.`)) return;
+      if (!await confirmAction('Import connections', `Import ${parsed.connections.length} desktops? Existing entries will not be overwritten.`, 'Import')) return;
       const result = await api('/desktops/import', {method:'POST', body:parsed});
       await refreshDesktops(); toast(`Imported ${result.created} desktop configurations.`);
     } catch (error) { showError(error); }
@@ -1097,6 +1383,7 @@ async function bootstrap() {
 
 function safeAsync(fn) { return event => { Promise.resolve(fn(event)).catch(showError); }; }
 function bind() {
+  initMachineWorkspace();
   bindDesktopUI();
   $('#clock').textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   $('#setupBack').addEventListener('click', () => showSetupStep(Math.max(0, setupStep - 1)));
@@ -1134,6 +1421,7 @@ function bind() {
       await refreshNetwork();
     } finally { save.disabled = false; }
   }));
+  $('#loginUsername').addEventListener('focus', () => refreshLoginOptions());
   $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value, totp: $('#loginTotp').value.trim() } }); $('#loginPassword').value = ''; $('#loginTotp').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
   $$('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
   $$('[data-action="new-asset"]').forEach(b => b.addEventListener('click', () => openAsset()));
@@ -1192,7 +1480,7 @@ function bind() {
   $('#vaultLoginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/vault/login', { method: 'POST', body: { client_id: $('#vaultClientId').value, client_secret: $('#vaultClientSecret').value } }); $('#vaultClientSecret').value = ''; toast('Bitwarden CLI authenticated. Unlock your vault next.'); vaultStatus(); }));
   $('#vaultUnlockForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/vault/unlock', { method: 'POST', body: { master_password: $('#vaultMaster').value } }); $('#vaultMaster').value = ''; toast('Vault unlocked in server memory.'); await vaultStatus(); await vaultItems(); }));
   $('#vaultLock').addEventListener('click', safeAsync(async () => { await api('/vault/lock', { method: 'POST' }); $('#vaultItems').replaceChildren(node('div', 'empty-state', 'Vault locked.')); toast('Vault locked.'); vaultStatus(); }));
-  $('#vaultLogout').addEventListener('click', safeAsync(async () => { if (!confirm('Log the Bitwarden CLI out? Saved login items cannot be used until you authenticate and unlock again.')) return; await api('/vault/logout', { method: 'POST' }); $('#vaultItems').replaceChildren(node('div', 'empty-state', 'Vault logged out.')); toast('CLI logged out.'); await vaultStatus(); }));
+  $('#vaultLogout').addEventListener('click', safeAsync(async () => { if (!await confirmAction('Sign out of Vaultwarden', 'Unlock and authenticate again before retrieving credentials.', 'Sign out')) return; await api('/vault/logout', { method: 'POST' }); $('#vaultItems').replaceChildren(node('div', 'empty-state', 'Vault logged out.')); toast('CLI logged out.'); await vaultStatus(); }));
   $('#vaultItemsRefresh').addEventListener('click', safeAsync(async () => { await api('/vault/sync', { method: 'POST' }); await vaultItems(); toast('Vault synced.'); }));
   $('#scanForm').addEventListener('submit', safeAsync(scanHost));
   $('#refreshHosts').addEventListener('click', safeAsync(refreshHosts));
@@ -1230,7 +1518,7 @@ function bind() {
   }));
   $('#mfaDisableForm').addEventListener('submit', safeAsync(async event => {
     event.preventDefault();
-    if (!confirm('Disable optional authenticator MFA? External HTTPS sign-ins will then require only your administrator password.')) return;
+    if (!await confirmAction('Disable MFA', 'External HTTPS logins will use username and password only.', 'Disable MFA')) return;
     await api('/mfa/disable', { method: 'POST', body: {password: $('#mfaDisablePassword').value, code: $('#mfaDisableCode').value.trim()} });
     event.target.reset();
     await refreshMfaStatus();

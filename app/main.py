@@ -60,7 +60,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='Switchyard', version='0.5.0-dev.2', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title='Switchyard', version='0.5.1-dev.1', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 def connection():
@@ -107,6 +107,15 @@ def init_data():
         );
         CREATE INDEX IF NOT EXISTS audit_at_idx ON audit(at DESC);
         CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS folders (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT REFERENCES folders(id),
+          created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS saved_passwords (
+          kind TEXT NOT NULL CHECK(kind IN ('ssh','desktop')),
+          entity_id TEXT NOT NULL, ciphertext TEXT NOT NULL,
+          PRIMARY KEY(kind,entity_id)
+        );
         CREATE TABLE IF NOT EXISTS runbooks (
           id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
           command TEXT NOT NULL, requires_confirmation INTEGER NOT NULL DEFAULT 1,
@@ -139,6 +148,8 @@ def init_data():
         ):
             if column not in {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}:
                 db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+        if 'folder_id' not in {r['name'] for r in db.execute('PRAGMA table_info(assets)')}:
+            db.execute('ALTER TABLE assets ADD COLUMN folder_id TEXT')
         global BOOTSTRAP_CODE
         existing = db.execute('SELECT 1 FROM users LIMIT 1').fetchone()
         if not existing and not BOOTSTRAP_CODE:
@@ -156,6 +167,47 @@ def init_data():
     bw = DATA / 'bw'
     bw.mkdir(exist_ok=True, mode=0o700)
     os.chmod(bw, 0o700)
+
+
+def credential_cipher(create: bool = False) -> Fernet:
+    path = DATA / 'credentials.key'
+    with LOCK:
+        if not path.exists():
+            with dbconn() as db:
+                has_secrets = db.execute('SELECT 1 FROM saved_passwords LIMIT 1').fetchone()
+            if has_secrets or not create:
+                raise HTTPException(503, 'Saved credential encryption key is missing; restore the original /data volume')
+            try:
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError:
+                pass
+            else:
+                with os.fdopen(fd, 'wb') as dest:
+                    dest.write(Fernet.generate_key())
+        if path.stat().st_mode & 0o077:
+            raise HTTPException(503, 'Saved credential encryption key permissions are unsafe')
+        return Fernet(path.read_bytes())
+
+
+def saved_password(kind: str, entity_id: str) -> str | None:
+    with dbconn() as db:
+        row = db.execute('SELECT ciphertext FROM saved_passwords WHERE kind=? AND entity_id=?', (kind, entity_id)).fetchone()
+    if row is None:
+        return None
+    try:
+        return credential_cipher().decrypt(row['ciphertext'].encode()).decode()
+    except InvalidToken:
+        raise HTTPException(503, 'Saved credential cannot be decrypted; restore the original encryption key')
+
+
+def put_saved_password(db, kind: str, entity_id: str, password: str | None, clear: bool = False):
+    if clear:
+        db.execute('DELETE FROM saved_passwords WHERE kind=? AND entity_id=?', (kind, entity_id))
+    elif password:
+        secret = credential_cipher(create=True).encrypt(password.encode()).decode()
+        db.execute('INSERT INTO saved_passwords(kind,entity_id,ciphertext) VALUES(?,?,?) '
+                   'ON CONFLICT(kind,entity_id) DO UPDATE SET ciphertext=excluded.ciphertext',
+                   (kind, entity_id, secret))
 
 
 def audit(action: str, target: str = '', outcome: str = 'ok'):
@@ -413,7 +465,16 @@ def setup_complete(body: InitialSetup, request: Request):
 
 @app.get('/healthz')
 def health():
-    return {'status': 'ok', 'version': '0.5.0-dev.2'}
+    return {'status': 'ok', 'version': '0.5.1-dev.1'}
+
+
+@app.get('/api/login/options')
+def login_options(request: Request):
+    _, remote = browser_origin(request)
+    with dbconn() as db:
+        row = db.execute('SELECT mfa_secret FROM users WHERE id=1').fetchone()
+        enabled = bool(row and row['mfa_secret'])
+    return {'mfa_required': bool(remote and enabled)}
 
 
 @app.post('/api/login')
@@ -632,6 +693,9 @@ class AssetModel(BaseModel):
     key_file: str = Field(default='', max_length=120)
     use_tmux: bool = False
     note: str = Field(default='', max_length=500)
+    folder_id: str = Field(default='', max_length=36)
+    password: str | None = Field(default=None, max_length=4096, repr=False)
+    clear_password: bool = False
 
     @model_validator(mode='after')
     def check_credential(self):
@@ -657,7 +721,84 @@ class AssetModel(BaseModel):
 
 
 def asset_as_dict(row):
-    return dict(row)
+    asset = dict(row)
+    with dbconn() as db:
+        asset['has_saved_password'] = bool(db.execute(
+            "SELECT 1 FROM saved_passwords WHERE kind='ssh' AND entity_id=?", (asset['id'],)).fetchone())
+    return asset
+
+
+class FolderInput(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    parent_id: str | None = None
+
+    @field_validator('name')
+    @classmethod
+    def valid_folder_name(cls, value):
+        value = value.strip()
+        if not value or '/' in value or '\\' in value or value in ('.', '..'):
+            raise ValueError('Invalid folder name')
+        return value
+
+
+@app.get('/api/folders')
+def list_folders(_=Depends(require_auth)):
+    with dbconn() as db:
+        return [dict(row) for row in db.execute('SELECT * FROM folders ORDER BY name COLLATE NOCASE')]
+
+
+@app.post('/api/folders', status_code=201)
+def create_folder(body: FolderInput, _=Depends(require_auth)):
+    fid = str(uuid.uuid4())
+    with dbconn() as db:
+        if body.parent_id and not db.execute('SELECT 1 FROM folders WHERE id=?', (body.parent_id,)).fetchone():
+            raise HTTPException(422, 'Parent folder not found')
+        if db.execute('SELECT 1 FROM folders WHERE parent_id IS ? AND name=? COLLATE NOCASE',
+                      (body.parent_id, body.name)).fetchone():
+            raise HTTPException(409, 'A folder with that name already exists here')
+        db.execute('INSERT INTO folders(id,name,parent_id,created_at) VALUES(?,?,?,?)',
+                   (fid, body.name, body.parent_id, int(time.time())))
+    audit('folder.created', fid)
+    return {'id': fid}
+
+
+@app.put('/api/folders/{fid}')
+def rename_folder(fid: str, body: FolderInput, _=Depends(require_auth)):
+    with dbconn() as db:
+        if not db.execute('SELECT 1 FROM folders WHERE id=?', (fid,)).fetchone():
+            raise HTTPException(404, 'Folder not found')
+        if body.parent_id == fid:
+            raise HTTPException(422, 'A folder cannot contain itself')
+        parent = body.parent_id
+        seen = {fid}
+        while parent:
+            if parent in seen:
+                raise HTTPException(422, 'Folder hierarchy cycle detected')
+            seen.add(parent)
+            ancestor = db.execute('SELECT parent_id FROM folders WHERE id=?', (parent,)).fetchone()
+            if not ancestor:
+                raise HTTPException(422, 'Parent folder not found')
+            parent = ancestor['parent_id']
+        if db.execute('SELECT 1 FROM folders WHERE id!=? AND parent_id IS ? AND name=? COLLATE NOCASE',
+                      (fid, body.parent_id, body.name)).fetchone():
+            raise HTTPException(409, 'Folder name already exists here')
+        db.execute('UPDATE folders SET name=?,parent_id=? WHERE id=?', (body.name, body.parent_id, fid))
+    audit('folder.updated', fid)
+    return {'ok': True}
+
+
+@app.delete('/api/folders/{fid}')
+def delete_folder(fid: str, _=Depends(require_auth)):
+    with dbconn() as db:
+        if not db.execute('SELECT 1 FROM folders WHERE id=?', (fid,)).fetchone():
+            raise HTTPException(404, 'Folder not found')
+        if db.execute('SELECT 1 FROM folders WHERE parent_id=?', (fid,)).fetchone():
+            raise HTTPException(409, 'Move or remove child folders before deleting this folder')
+        if db.execute('SELECT 1 FROM assets WHERE folder_id=?', (fid,)).fetchone():
+            raise HTTPException(409, 'Move machines out of this folder before deleting it')
+        db.execute('DELETE FROM folders WHERE id=?', (fid,))
+    audit('folder.deleted', fid)
+    return {'ok': True}
 
 
 @app.get('/api/assets')
@@ -671,12 +812,15 @@ def create_asset(body: AssetModel, _=Depends(require_auth)):
     aid = str(uuid.uuid4())
     now = int(time.time())
     with dbconn() as db:
+        if body.folder_id and not db.execute('SELECT 1 FROM folders WHERE id=?', (body.folder_id,)).fetchone():
+            raise HTTPException(422, 'Folder does not exist')
         db.execute('''INSERT INTO assets(id,label,host,port,username,environment,auth_type,
-                      credential_ref,key_file,use_tmux,note,created_at,updated_at)
-                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                      credential_ref,key_file,use_tmux,note,created_at,updated_at,folder_id)
+                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                    (aid, body.label, body.host, body.port, body.username, body.environment,
                     body.auth_type, body.credential_ref, body.key_file, int(body.use_tmux),
-                    body.note, now, now))
+                    body.note, now, now, body.folder_id or None))
+        put_saved_password(db, 'ssh', aid, body.password, body.clear_password)
     audit('asset.created', aid)
     return {'id': aid}
 
@@ -684,13 +828,16 @@ def create_asset(body: AssetModel, _=Depends(require_auth)):
 @app.put('/api/assets/{aid}')
 def update_asset(aid: str, body: AssetModel, _=Depends(require_auth)):
     with dbconn() as db:
+        if body.folder_id and not db.execute('SELECT 1 FROM folders WHERE id=?', (body.folder_id,)).fetchone():
+            raise HTTPException(422, 'Folder does not exist')
         cur = db.execute('''UPDATE assets SET label=?,host=?,port=?,username=?,environment=?,
-                auth_type=?,credential_ref=?,key_file=?,use_tmux=?,note=?,updated_at=? WHERE id=?''',
+                auth_type=?,credential_ref=?,key_file=?,use_tmux=?,note=?,updated_at=?,folder_id=? WHERE id=?''',
                 (body.label, body.host, body.port, body.username, body.environment,
                  body.auth_type, body.credential_ref, body.key_file, int(body.use_tmux),
-                 body.note, int(time.time()), aid))
+                 body.note, int(time.time()), body.folder_id or None, aid))
         if cur.rowcount != 1:
             raise HTTPException(404, 'Asset not found')
+        put_saved_password(db, 'ssh', aid, body.password, body.clear_password)
     audit('asset.updated', aid)
     return {'ok': True}
 
@@ -701,6 +848,7 @@ def delete_asset(aid: str, _=Depends(require_auth)):
         cur = db.execute('DELETE FROM assets WHERE id=?', (aid,))
         if not cur.rowcount:
             raise HTTPException(404, 'Asset not found')
+        db.execute("DELETE FROM saved_passwords WHERE kind='ssh' AND entity_id=?", (aid,))
     audit('asset.deleted', aid)
     return {'ok': True}
 
@@ -784,14 +932,23 @@ def backup(_=Depends(require_auth)):
         mfa_key = keyfile.read_bytes() if keyfile.is_file() else b''
         if mfa_key and (len(mfa_key) != 44 or keyfile.stat().st_mode & 0o077):
             raise HTTPException(503, 'Stored MFA key has invalid format or permissions')
+        with dbconn() as source:
+            saved_exists = bool(source.execute('SELECT 1 FROM saved_passwords LIMIT 1').fetchone())
+        credkey = DATA / 'credentials.key'
+        credentials_key = credkey.read_bytes() if credkey.is_file() else b''
+        if saved_exists and not credentials_key:
+            raise HTTPException(503, 'Encrypted saved passwords exist but the recovery key is missing')
+        if credentials_key and (len(credentials_key) != 44 or credkey.stat().st_mode & 0o077):
+            raise HTTPException(503, 'Saved credentials key format or file permissions are unsafe')
         manifest = {
-            'application': 'Switchyard', 'format': 2, 'version': '0.5.0-dev.2',
+            'application': 'Switchyard', 'format': 2, 'version': '0.5.1-dev.1',
             'created_utc': datetime.now(timezone.utc).isoformat(),
             'files': {'switchyard.sqlite3': hashlib.sha256(content).hexdigest(),
                       'known_hosts': hashlib.sha256(hosts).hexdigest(),
-                      **({'mfa.key': hashlib.sha256(mfa_key).hexdigest()} if mfa_key else {})},
+                      **({'mfa.key': hashlib.sha256(mfa_key).hexdigest()} if mfa_key else {}),
+                      **({'credentials.key': hashlib.sha256(credentials_key).hexdigest()} if credentials_key else {})},
             'excluded': ['sessions', 'SSH private keys', 'Vaultwarden CLI state'],
-            'warning': 'SENSITIVE: includes MFA decryption key and password hashes. Store encrypted and offline.',
+            'warning': 'HIGHLY SENSITIVE: backup includes credential decryption keys and password hashes. Encrypt offline.',
         }
         output = _io.BytesIO()
         with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
@@ -800,8 +957,142 @@ def backup(_=Depends(require_auth)):
             archive.writestr('known_hosts', hosts)
             if mfa_key:
                 archive.writestr('mfa.key', mfa_key)
+            if credentials_key:
+                archive.writestr('credentials.key', credentials_key)
     return Response(output.getvalue(), media_type='application/zip',
                     headers={'Content-Disposition': 'attachment; filename="switchyard-backup.zip"', 'Cache-Control': 'no-store'})
+
+
+class UpdateConfig(BaseModel):
+    asset_id: str = Field(min_length=36, max_length=36)
+    compose_project: str = Field(pattern=r'^[a-z0-9][a-z0-9_-]{1,62}$')
+    repository_directory: str = Field(min_length=2, max_length=255)
+    current_password: str = Field(min_length=1, max_length=4096)
+
+    @field_validator('repository_directory')
+    @classmethod
+    def validate_repository_directory(cls, path: str):
+        if (not path.startswith('/') or '\x00' in path or any(
+                part in ('.', '..') for part in path.split('/')) or
+                not re.fullmatch(r'/[A-Za-z0-9._/+-]+', path)):
+            raise ValueError('Enter an absolute Linux checkout directory without traversal or shell characters')
+        return path.rstrip('/')
+
+
+class UpdateInstall(BaseModel):
+    current_password: str = Field(min_length=1, max_length=4096)
+
+
+@app.get('/api/update/config')
+def get_update_config(_=Depends(require_auth)):
+    with dbconn() as db:
+        keys = ['update_asset_id', 'update_project', 'update_directory', 'update_job']
+        return {key.removeprefix('update_'): saved_setting(key) for key in keys}
+
+
+@app.put('/api/update/config')
+def configure_update(body: UpdateConfig, request: Request, _=Depends(require_auth)):
+    verify_origin(request)
+    fetch_asset(body.asset_id)
+    with dbconn() as db:
+        if not check_admin_password(db, body.current_password):
+            raise HTTPException(403, 'Administrator password is incorrect')
+        db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
+            ('update_asset_id', body.asset_id), ('update_project', body.compose_project),
+            ('update_directory', body.repository_directory)])
+    audit('update.configuration.changed')
+    return {'ok': True}
+
+
+@app.get('/api/update/status')
+def update_status(_=Depends(require_auth)):
+    configured = bool(saved_setting('update_asset_id') and saved_setting('update_project') and saved_setting('update_directory'))
+    installed = '0.5.1-dev.1'
+    latest = None
+    check_error = None
+    try:
+        from urllib.request import Request as UrlRequest, urlopen
+        req = UrlRequest('https://raw.githubusercontent.com/gigabytegrove/switchyard/main/VERSION',
+                         headers={'User-Agent':'Switchyard/0.5.1-dev.1'})
+        with urlopen(req, timeout=3) as remote:
+            contents = remote.read(80).decode('ascii').strip()
+        if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.]+)?', contents):
+            latest = contents
+        else:
+            check_error = 'Repository VERSION response was invalid'
+    except (OSError, ValueError, UnicodeError) as error:
+        check_error = 'Could not reach the GitHub VERSION endpoint'
+    return {'installed': installed, 'repository_version': latest, 'check_error': check_error,
+            'update_available': latest is not None and latest != installed,
+            'channel': 'development', 'automatic_install_available': configured,
+            'message': ('SSH update executor configured.' if configured else
+                        'Configure the SSH Docker-host executor below to enable in-app installation.')}
+
+
+@app.post('/api/update/install')
+def update_install(body: UpdateInstall, request: Request, _=Depends(require_auth)):
+    """Schedule a detached, explicitly authorized Compose upgrade on a configured SSH host.
+
+    The executor never gets a local Docker socket. It updates exactly one
+    operator-configured Compose project from the Switchyard Git origin.
+    """
+    verify_origin(request)
+    asset_id = saved_setting('update_asset_id')
+    project = saved_setting('update_project')
+    directory = saved_setting('update_directory')
+    if not asset_id or not project or not directory:
+        raise HTTPException(409, 'Configure the update executor in Settings first')
+    with dbconn() as db:
+        if not check_admin_password(db, body.current_password):
+            raise HTTPException(403, 'Administrator password is incorrect')
+    asset = fetch_asset(asset_id)
+    if asset['auth_type'] == 'interactive' and not saved_password('ssh', asset_id):
+        raise HTTPException(409, 'Update host requires a saved SSH credential, managed key or Vaultwarden item')
+    # Stored values are validated again, including when reading a restored DB.
+    UpdateConfig(asset_id=asset_id, compose_project=project,
+                 repository_directory=directory, current_password='validated')
+    job = uuid.uuid4().hex
+    log_path = '/tmp/switchyard-update-' + job + '.log'
+    script = ('set -eu\n'
+              'trap \'rc=$?; if [ \"$rc\" -ne 0 ]; then echo SWITCHYARD_UPDATE_FAILED:$rc; fi\' EXIT\n'
+              f'cd {shlex.quote(directory)}\n'
+              'test "$(git remote get-url origin)" = "https://github.com/gigabytegrove/switchyard.git"\n'
+              'git fetch --quiet origin main\n'
+              'git merge --ff-only FETCH_HEAD\n'
+              f'docker compose -p {shlex.quote(project)} -f compose.yaml pull\n'
+              f'docker compose -p {shlex.quote(project)} -f compose.yaml up -d --no-build --wait --remove-orphans\n'
+              'echo SWITCHYARD_UPDATE_SUCCESS\n')
+    # All descriptors detached, so the SSH channel may close when this app
+    # container is recreated without terminating the remote update process.
+    command = ('nohup sh -c ' + shlex.quote(script) +
+               ' > ' + shlex.quote(log_path) + ' 2>&1 < /dev/null & echo SWITCHYARD_UPDATE_PID:$!')
+    outcome = remote_command(asset, command)
+    if 'SWITCHYARD_UPDATE_PID:' not in outcome:
+        audit('update.schedule.failed', job, 'failed')
+        raise HTTPException(502, 'Remote update executor did not acknowledge scheduling')
+    with dbconn() as db:
+        db.execute('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', ('update_job', job))
+    audit('update.scheduled', job)
+    return {'job': job, 'status': 'scheduled', 'message': 'Update launched on the configured Docker host. Follow its remote log for the result.'}
+
+
+@app.get('/api/update/job')
+def update_job(_=Depends(require_auth)):
+    job = saved_setting('update_job')
+    if not job:
+        return {'job': None, 'log': '', 'status': 'none'}
+    if not re.fullmatch(r'[0-9a-f]{32}', job):
+        raise HTTPException(503, 'Stored updater job identifier is invalid')
+    asset_id = saved_setting('update_asset_id')
+    asset = fetch_asset(asset_id)
+    log_path = '/tmp/switchyard-update-' + job + '.log'
+    try:
+        output = remote_command(asset, 'tail -n 80 -- ' + shlex.quote(log_path))
+    except HTTPException:
+        return {'job': job, 'status': 'unavailable', 'log': 'Update log not yet available or SSH unreachable'}
+    status = ('success' if 'SWITCHYARD_UPDATE_SUCCESS' in output else
+              'failed' if 'SWITCHYARD_UPDATE_FAILED:' in output else 'running')
+    return {'job': job, 'status': status, 'log': output[:16384]}
 
 
 @app.get('/api/overview')
@@ -954,7 +1245,7 @@ def ssh_client(asset: dict, interactive_password: str | None = None):
     os.chmod(keys, 0o600)
     client.load_host_keys(str(keys))
     client.set_missing_host_key_policy(paramiko.RejectPolicy())
-    password = vault_password(asset['credential_ref']) if asset['auth_type'] == 'vault' else (interactive_password if asset['auth_type'] == 'interactive' else None)
+    password = vault_password(asset['credential_ref']) if asset['auth_type'] == 'vault' else ((interactive_password or saved_password('ssh', asset['id'])) if asset['auth_type'] == 'interactive' else None)
     key = None
     if asset['auth_type'] == 'key':
         name = asset['key_file']
@@ -1941,4 +2232,4 @@ async def security_headers(request: Request, call_next):
 
 
 # Remote desktops use the same session, origin, Vaultwarden and audit controls.
-desktops.install_desktops(app, dbconn, require_auth, session_from_ws, vault_password, audit)
+desktops.install_desktops(app, dbconn, require_auth, session_from_ws, vault_password, audit, saved_password, put_saved_password)

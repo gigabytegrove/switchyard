@@ -6,16 +6,15 @@ fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || fail 'Docker Engine is not installed'
 docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is required'
 
-# Do not start a second Switchyard project on the same host port.
-# A separate Compose project creates a separate named volume even if the app name matches.
-# This check never modifies or removes another container or its data.
+# A separate Compose project creates a separate named volume and competes for port 9791.
+# Do not stop/delete containers or data belonging to another installation.
 existing_service="$(docker compose ps -q switchyard 2>/dev/null || true)"
 while IFS= read -r running_container; do
   [[ -n "$running_container" && "$running_container" != "$existing_service" ]] || continue
   if docker port "$running_container" 2>/dev/null | grep -Eq ':9791([[:space:]]|$)'; then
     occupied_name="$(docker inspect --format '{{.Name}}' "$running_container" 2>/dev/null || echo "$running_container")"
     occupied_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$running_container" 2>/dev/null || echo unknown)"
-    fail "TCP 9791 is already published by $occupied_name (Compose project: $occupied_project). Update that existing deployment in its original project instead of starting another one. No containers or volumes were removed."
+    fail "TCP 9791 is already published by $occupied_name (Compose project: $occupied_project). Upgrade that original project instead. Nothing was removed."
   fi
 done < <(docker ps -q)
 

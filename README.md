@@ -4,10 +4,10 @@
 
 **Infrastructure in motion. Everything in view.**
 
-Self-hosted SSH, SFTP, Docker operations and remote desktops (RDP, VNC, SPICE), with optional Vaultwarden credentials.
+Self-hosted machine profiles with SSH, SFTP, Docker, Linux health, and remote desktops (RDP, VNC, SPICE). Optional encrypted stored passwords and Vaultwarden integration.
 
 [![Source tests and Docker build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.5.0--dev.2-B72237)
+![Version](https://img.shields.io/badge/version-0.5.1--dev.1-B72237)
 ![Docker](https://img.shields.io/badge/deployment-Docker-B72237?logo=docker)
 ![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-5934AC)
 ![Status](https://img.shields.io/badge/status-development-orange)
@@ -38,11 +38,18 @@ docker compose ps
 
 **Deployment images:** Docker Compose pulls published artifacts from GHCR. The app is built in GitHub Actions; Docker Hub is not required on the deployment host. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
 
-### Existing Docker-panel installations
 
-**Use one Compose project per Switchyard installation.** If you originally deployed through a Docker management panel, update the image and Compose configuration **inside that same panel project**. Do not also launch `docker compose up` from a Git checkout on the same host: both installations would compete for TCP 9791 and, more importantly, would create distinct named Docker volumes. The Git checkout deployment script refuses to start when a different running container already publishes TCP 9791. It does **not** remove or rename an existing container.
+## Machine-centric operation
 
-If you see `The container name "/switchyard" is already in use`, update to the latest `compose.yaml` (the application no longer declares `container_name:`), identify the existing container's Compose ownership and mounted data volume with `docker inspect`, and retain the original project and volume. Do not remove volumes or use `docker compose down -v`. If another deployment still owns TCP 9791, stop or migrate it **only after identifying and backing up its data**.
+When you sign in, **Machines** is the default landing page, with nested folders, an environment filter and search. Each machine profile contains **Overview, Terminal, Remote desktop, File transfer, Docker and Health** tabs. SFTP browsing, upload, download and editing are scoped automatically to the SSH connection of that machine; no independent File Transfer menu is required. RDP/VNC/SPICE connections sharing the same hostname appear together, including desktop-only machines. Creating a desktop connection from a machine profile prepopulates its host.
+
+The SSH and desktop editors now offer **Save encrypted password**. Leaving that input blank on edits retains the existing saved secret; checking **Remove saved password** clears it. No plaintext password is stored in SQLite. The encryption key resides in the persistent `/data/credentials.key` and is included in the **sensitive** backup archive. There is no browser `prompt()` or `confirm()`; the app uses accessible native dialogs for credentials and confirmation. One-time unsaved SSH passwords remain in browser memory only until logout.
+
+### In-app Docker updater
+
+Navigate to **Settings → Software updates**, configure a previously saved SSH machine corresponding to the Docker host, the exact Compose project name, and the absolute directory of your Git checkout. Reenter the Switchyard administrator password to save. When requested, **Install update** executes a detached SSH job that verifies the GitHub remote, fast-forwards the checkout, pulls images and recreates that specific Compose project. Its log can be inspected after reconnecting. You must use a saved SSH password, key or unlocked Vaultwarden credential for that host. No host Docker socket is mounted into Switchyard. A failed update is visible in the job log; automated rollback is not yet implemented. Only configure this workflow on a trusted host under your control.
+
+**Testing qualification:** Browser controls were exercised in Chromium using mocked API replies and the backend regression suite; an actual Docker host self-update and live SSH/RDP/VNC/SPICE end-to-end session have not been validated in this release.
 
 ## First-run setup
 
@@ -62,6 +69,8 @@ After first-run completion, use **Settings → Browser and network access** to u
 | TOTP encryption key | `/data/mfa.key` (mode `0600`) | Generated and maintained internally; never enter manually |
 | SSH assets, desktops, runbooks, audit, health observations | SQLite | Relevant workspaces |
 | SSH keys, SSH host trust, Bitwarden CLI runtime files | `/data/keys`, `/data/known_hosts`, `/data/bw` | Relevant workspaces |
+| Machine folders and encrypted saved passwords | SQLite (`folders`, `saved_passwords`) + `/data/credentials.key` | Machine editor / folders |
+| In-app updater executor | SQLite settings | Settings → Software updates |
 
 **The `/data` Docker named volume is required for persistence.** Never use `docker compose down -v` during upgrades or normal maintenance. A container/image replacement does not reset settings when the volume is preserved.
 
@@ -69,14 +78,17 @@ After first-run completion, use **Settings → Browser and network access** to u
 
 | Workspace | Capabilities |
 | --- | --- |
-| SSH terminals | Browser-based SSH, tabs, dynamic resizing, managed keys, optional tmux reattachment |
-| File manager | SFTP browse/upload/download/rename/delete, folder creation, atomic text editing with conflict detection |
-| Docker | SSH-based container lists, start/stop/restart, inspect, stats, logs, images, volumes, networks and Compose projects |
+| Machines | Persistent host inventory, nested folders, environment categories, unified host workspaces and connection shortcuts |
+| SSH terminals | Per-machine browser terminal, tabs, resizing, managed keys, optional tmux reattachment |
+| File manager | Inside each SSH machine profile: SFTP browse/upload/download/rename/delete, folder creation, atomic text editing with conflict detection |
+| Docker | Inside each SSH machine profile: container lists, start/stop/restart, inspect, stats, logs, images, volumes, networks and Compose projects |
 | Remote desktops | Browser RDP/VNC through isolated `guacd`; SPICE via isolated viewer, direct hosts and ephemeral Proxmox/QEMU `.vv` consoles |
 | Assets | Named hosts, favorites, environments, tags/notes and credential modes |
 | Runbooks | Saved SSH commands, explicit confirmation, bounded execution, persistent execution outcome history |
-| Health | On-demand Linux metrics, uptime, load, memory, disk and observation history |
-| Vaultwarden | Bitwarden CLI backed login, sync, unlock/lock and item-to-connection credential retrieval |
+| Health | Inside each SSH machine profile: on-demand Linux metrics, uptime, load, memory, disk and observation history |
+| Vaultwarden | Located under Settings → Integrations; Bitwarden CLI login, sync, unlock/lock, and credential retrieval |
+| Saved credentials | SSH and RDP/VNC/SPICE passwords may be encrypted in `/data` using Fernet. Cleartext is never sent back in inventory responses |
+| Updater | Settings → Software updates: configure an SSH-based executor for a specific Docker Compose project; explicit admin reauthentication and log inspection |
 | Security | SSH host-key trust, optional TOTP for HTTPS proxy, session controls, CSRF origin verification, activity journal |
 | Backups | Consistent database snapshot, host trust, and TOTP recovery key with SHA-256 manifest (sensitive backup) |
 
@@ -114,7 +126,7 @@ For an older `.env`/Docker-secret based Switchyard installation, `./scripts/depl
 
 ### Backup and recovery
 
-**Settings → Download consistent backup** exports SQLite (excluding live sessions), `known_hosts`, and `mfa.key` when enrolled, plus a SHA-256 manifest. **The backup contains password hashes and the TOTP decryption key. Treat it as a sensitive credential archive: encrypt it at rest and do not share it.** This is not a full disaster-recovery archive: SSH private keys and Vaultwarden CLI state are not included, and they must be backed up independently from the Docker volume if required. Restore only with the container stopped and file ownership/permissions preserved (UID/GID 10001). Never overwrite live WAL files.
+**Settings → Download consistent backup** exports SQLite (excluding live sessions), `known_hosts`, `mfa.key` when enrolled, and `credentials.key` when present, plus a SHA-256 manifest. **The backup contains password hashes, and potentially TOTP and saved-password decryption keys. Treat it as a sensitive credential archive: encrypt it at rest and do not share it.** This is not a full disaster-recovery archive: SSH private keys and Vaultwarden CLI state are not included, and they must be backed up independently from the Docker volume if required. Restore only with the container stopped and file ownership/permissions preserved (UID/GID 10001). Never overwrite live WAL files.
 
 ## Security and limitations
 
