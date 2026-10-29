@@ -38,7 +38,9 @@ jobs:
           docker tag switchyard:test switchyard:0.4.0
           mkdir -p secrets
           printf '%s\n' 'github-actions-disposable-ci-password' > secrets/admin_password.txt
-          chmod 644 secrets/admin_password.txt
+          chmod 600 secrets/admin_password.txt
+          openssl rand 32 | openssl base64 -A | tr '+/' '-_' > secrets/mfa_key.txt
+          chmod 600 secrets/mfa_key.txt
           printf 'PUBLIC_ORIGIN=http://127.0.0.1:9791\nCOOKIE_SECURE=false\nSWITCHYARD_BIND=127.0.0.1\n' > .env
           docker compose up -d --no-build
           for attempt in $(seq 1 45); do
