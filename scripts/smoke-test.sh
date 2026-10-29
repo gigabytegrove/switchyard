@@ -38,9 +38,14 @@ echo 'PASS: desktop API rejects unauthenticated access'
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   docker compose config --quiet
   echo 'PASS: Docker Compose config resolves'
-  # guacd must not have a published host port.
-  if docker compose port guacd 4822 >/dev/null 2>&1; then
-    echo 'FAIL: private guacd service has a published port' >&2; exit 1
+  # EXPOSE 4822/tcp is an internal container port, not a published host port.
+  # docker compose port may succeed even when no host binding exists.
+  guacd_id="$(docker compose ps -q guacd)"
+  [[ -n "$guacd_id" ]] || { echo 'FAIL: guacd container is missing' >&2; exit 1; }
+  guacd_bindings="$(docker inspect --format '{{json .HostConfig.PortBindings}}' "$guacd_id")"
+  if [[ "$guacd_bindings" != "{}" && "$guacd_bindings" != "null" ]]; then
+    echo "FAIL: private guacd service has published host ports: $guacd_bindings" >&2
+    exit 1
   fi
   echo 'PASS: guacd has no published host port'
 fi
