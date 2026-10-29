@@ -93,7 +93,7 @@ proxy_set_header X-Forwarded-Proto https;
 proxy_read_timeout 3600s;
 ```
 
-**Security boundary:** Public-origin classification is based on exact configured `Host` and browser `Origin`; forwarding to it requires an HTTPS reverse proxy that **rejects unknown hostnames**. Never publicly forward TCP 9791. Docker-published host ports may bypass simplistic UFW rules, so test effective host firewall/DOCKER-USER policy. Host-IP LAN connections use password authentication; public-host sessions always require MFA. SSH and desktop WebSockets enforce the same authentication rules.
+**Security boundary:** Public-origin classification is based on exact configured `Host` and browser `Origin`; forwarding to it requires an HTTPS reverse proxy that **rejects unknown hostnames**. Never publicly forward TCP 9791. Docker-published host ports may bypass simplistic UFW rules, so test effective host firewall/DOCKER-USER policy. Host-IP LAN connections also require a private source IP (direct WAN attempts are rejected), then use password authentication; public-host sessions always require MFA. SSH and desktop WebSockets enforce the same authentication rules.
 
 ## Upgrading existing installations
 
@@ -108,7 +108,7 @@ For an older `.env`/Docker-secret based Switchyard installation, `./scripts/depl
 
 ### Backup and recovery
 
-**Settings → Download consistent backup** exports SQLite (excluding live sessions), `known_hosts`, and `mfa.key`, plus a SHA-256 manifest. **The backup contains password hashes and the TOTP decryption key. Treat it as a sensitive credential archive: encrypt it at rest and do not share it.** This is not a full disaster-recovery archive: SSH private keys and Vaultwarden CLI state are not included, and they must be backed up independently from the Docker volume if required. Restore only with the container stopped and file ownership/permissions preserved (UID/GID 10001). Never overwrite live WAL files.
+**Settings → Download consistent backup** exports SQLite (excluding live sessions), `known_hosts`, and `mfa.key` when enrolled, plus a SHA-256 manifest. **The backup contains password hashes and the TOTP decryption key. Treat it as a sensitive credential archive: encrypt it at rest and do not share it.** This is not a full disaster-recovery archive: SSH private keys and Vaultwarden CLI state are not included, and they must be backed up independently from the Docker volume if required. Restore only with the container stopped and file ownership/permissions preserved (UID/GID 10001). Never overwrite live WAL files.
 
 ## Security and limitations
 

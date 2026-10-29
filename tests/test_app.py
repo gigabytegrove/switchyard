@@ -15,7 +15,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(m, 'BW_SESSION', None)
     with m.LOCK:
         m.FAILED.clear()
-    with TestClient(m.app, base_url='http://testserver') as client:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url='http://testserver') as client:
         assert client.get('/api/setup/status', headers={'Host':'127.0.0.1:9791'}).json()['setup_required']
         response = client.post('/api/setup/complete', headers={'Host':'127.0.0.1:9791','Origin':'http://127.0.0.1:9791'}, json={
           'claim_code':m.BOOTSTRAP_CODE,'username':'admin','password':password,
@@ -94,7 +94,7 @@ def test_asset_validation(client):
 
 def test_password_change_revokes_other_sessions(client):
     authenticate(client)
-    other = TestClient(m.app, base_url='http://testserver')
+    other = TestClient(m.app, client=('192.168.0.200', 4432), base_url='http://testserver')
     authenticate(other)
     changed = client.post('/api/password', headers={'Origin': 'http://testserver'},
                           json={'current_password': 'serious-development-password-12345', 'new_password': 'replacement-password-very-strong'})
@@ -268,10 +268,10 @@ def test_backup_wal_snapshot_without_sessions_or_secrets(client):
     assert result.headers['content-type'].startswith('application/zip')
     assert b'VERY-SECRET-' not in result.content
     with zipfile.ZipFile(io.BytesIO(result.content)) as z:
-        assert sorted(z.namelist()) == ['known_hosts', 'manifest.json', 'mfa.key', 'switchyard.sqlite3']
+        assert sorted(z.namelist()) == ['known_hosts', 'manifest.json', 'switchyard.sqlite3']
         manifest = json.loads(z.read('manifest.json'))
         assert manifest['version'] == '0.5.0-dev.1'
-        assert hashlib.sha256(z.read('mfa.key')).hexdigest() == manifest['files']['mfa.key']
+        assert 'mfa.key' not in z.namelist()  # Not enrolled yet, so no key should be restored.
         dbdata = z.read('switchyard.sqlite3')
         assert hashlib.sha256(dbdata).hexdigest() == manifest['files']['switchyard.sqlite3']
         assert z.read('known_hosts') == b'example invalid-public-host-key\n'

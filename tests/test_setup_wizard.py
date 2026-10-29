@@ -19,7 +19,7 @@ def fresh(monkeypatch, tmp_path):
     monkeypatch.setattr(m, 'DB_FILE', tmp_path / 'data' / 'switchyard.sqlite3')
     with m.LOCK:
         m.FAILED.clear()
-    with TestClient(m.app, base_url=LAN) as client:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url=LAN) as client:
         yield client
 
 
@@ -86,9 +86,9 @@ def test_update_settings_requires_password_and_lan_authority(fresh):
 
 def test_untrusted_dns_host_rejected_without_explicit_alias(fresh):
     assert submit(fresh).status_code == 200
-    with TestClient(m.app, base_url='http://rogue.internal-domain.example') as unknown:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url='http://rogue.internal-domain.example') as unknown:
         assert unknown.get('/api/setup/status').status_code == 403
-    with TestClient(m.app, base_url='http://switchyard.lan:9791') as alias:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url='http://switchyard.lan:9791') as alias:
         assert alias.get('/api/setup/status').status_code == 200
 
 
@@ -109,3 +109,13 @@ def test_backup_includes_recoverable_mfa_key(fresh):
         m.mfa_cipher()
     assert exc.value.status_code == 503
     assert not (m.DATA / 'mfa.key').exists(), 'must not replace key for enrolled MFA'
+
+
+def test_direct_public_source_cannot_spoof_private_lan_hostname(fresh):
+    assert submit(fresh).status_code == 200
+    with TestClient(m.app, client=('8.8.8.8', 43210), base_url=LAN) as public:
+        assert public.get('/api/setup/status').status_code == 403
+        assert public.post('/api/login', headers={'Origin':LAN},
+            json={'username':'operator','password':PW}).status_code == 403
+    with TestClient(m.app, client=('8.8.8.8', 43210), base_url='http://switchyard.lan:9791') as public_dns:
+        assert public_dns.get('/api/setup/status').status_code == 403

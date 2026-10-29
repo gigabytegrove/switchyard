@@ -44,7 +44,7 @@ PYGUAC
 COPY app/ /app/app/
 COPY static/ /app/static/
 # Distribution-provided, version-pinned LGPLv3 SPICE HTML5 client.
-RUN mkdir -p /app/static/spice && cp -a /usr/share/spice-html5/src/. /app/static/spice/ && cp /usr/share/spice-html5/spice.css /app/static/spice/spice.css
+RUN mkdir -p /app/static/spice && cp -a /usr/share/spice-html5/. /app/static/spice/
 
 RUN cp /tmp/guacamole.js /app/static/guacamole.js \
     && cp /opt/ui/node_modules/@xterm/xterm/lib/xterm.js /app/static/xterm.js \

@@ -7,8 +7,9 @@
 - Make LAN binding `0.0.0.0:9791` without SSH tunneling; require password on LAN, MFA on the configured public HTTPS hostname, including terminal/desktop WebSocket checks.
 - Add authenticated LAN-only network settings editor requiring admin password, applying changes without restart and revoking other sessions.
 - Migrate preexisting Docker-secret MFA key from running old container before Compose recreation; fail closed when previously enrolled key material is missing.
-- Include TOTP decryption key in sensitive backup ZIP for recovery, with manifest and clear warnings; continue excluding SSH private keys and Vaultwarden CLI cache.
+- Reject public-source connections masquerading as private LAN Host addresses; include TOTP decryption key (only when present) in sensitive backup ZIP for recovery, with manifest and clear warnings; continue excluding SSH private keys and Vaultwarden CLI cache.
 - Add repository README workflow badge, version, deployment, protocol, and status badges, new install/upgrade guidance, and quality tests.
+- Correct Docker build: Debian bookworm `spice-html5=0.3.0-2` installs assets directly in `/usr/share/spice-html5/` (not `/src`); source CI caught the previous incorrect image path.
 - Development release; no hardware/proxy end-to-end acceptance claimed.
 
 ## 0.4.0 — RDP, VNC and SPICE remote desktops (2026-10-28)

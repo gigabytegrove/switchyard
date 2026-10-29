@@ -228,6 +228,15 @@ def private_host(host: str) -> bool:
         return address == 'localhost'
 
 
+def private_source(scope) -> bool:
+    """Block direct WAN requests masquerading as a private-LAN Host header."""
+    try:
+        source = ipaddress.ip_address(scope.client.host)
+        return source.is_private or source.is_loopback or source.is_link_local
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
 def browser_origin(scope) -> tuple[str, bool]:
     """Classify by exact Host; private-origin access never bypasses public-host MFA."""
     host = (scope.headers.get('host') or '').lower()
@@ -238,8 +247,12 @@ def browser_origin(scope) -> tuple[str, bool]:
         return remote, True
     for lan in json.loads(saved_setting('lan_origins', '[]')):
         if host == urlsplit(lan).netloc.lower():
+            if not private_source(scope):
+                raise HTTPException(403, 'LAN access requires a private network source')
             return lan, False
     if private_host(host):
+        if not private_source(scope):
+            raise HTTPException(403, 'LAN access requires a private network source')
         scheme = 'https' if scope.url.scheme in ('https', 'wss') else 'http'
         return f'{scheme}://{host}', False
     raise HTTPException(403, 'Host is not permitted. Add a LAN alias in Settings or configure the HTTPS proxy.')
@@ -766,7 +779,7 @@ def backup(_=Depends(require_auth)):
             'created_utc': datetime.now(timezone.utc).isoformat(),
             'files': {'switchyard.sqlite3': hashlib.sha256(content).hexdigest(),
                       'known_hosts': hashlib.sha256(hosts).hexdigest(),
-                      'mfa.key': hashlib.sha256(mfa_key).hexdigest()},
+                      **({'mfa.key': hashlib.sha256(mfa_key).hexdigest()} if mfa_key else {})},
             'excluded': ['sessions', 'SSH private keys', 'Vaultwarden CLI state'],
             'warning': 'SENSITIVE: includes MFA decryption key and password hashes. Store encrypted and offline.',
         }
@@ -775,7 +788,8 @@ def backup(_=Depends(require_auth)):
             archive.writestr('manifest.json', json.dumps(manifest, indent=2))
             archive.writestr('switchyard.sqlite3', content)
             archive.writestr('known_hosts', hosts)
-            archive.writestr('mfa.key', mfa_key)
+            if mfa_key:
+                archive.writestr('mfa.key', mfa_key)
     return Response(output.getvalue(), media_type='application/zip',
                     headers={'Content-Disposition': 'attachment; filename="switchyard-backup.zip"', 'Cache-Control': 'no-store'})
 

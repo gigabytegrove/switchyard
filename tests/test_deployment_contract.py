@@ -24,6 +24,8 @@ def test_runtime_assets_and_isolated_spice_shell_are_packaged():
     dockerfile = (ROOT / 'Dockerfile').read_text()
     assert 'verify-runtime-assets /app/static' in dockerfile
     assert 'spice-html5=0.3.0-2' in dockerfile
+    assert 'cp -a /usr/share/spice-html5/. /app/static/spice/' in dockerfile
+    assert '/usr/share/spice-html5/src/.' not in dockerfile
     assert 'guacamole-common-js/1.6.0/' in dockerfile
     verify = (ROOT / 'scripts/verify-runtime-assets.sh').read_text()
     for required in ('guacamole.js', 'spice-view.js', 'spice/main.js',

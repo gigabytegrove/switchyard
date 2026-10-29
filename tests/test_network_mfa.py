@@ -29,7 +29,7 @@ def configured(monkeypatch, tmp_path):
     monkeypatch.setattr(m, 'DB_FILE', tmp_path / 'data' / 'switchyard.sqlite3')
     with m.LOCK:
         m.FAILED.clear()
-    with TestClient(m.app, base_url=LAN) as client:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url=LAN) as client:
         response = client.post('/api/setup/complete', headers={'Origin':LAN}, json={
           'claim_code':m.BOOTSTRAP_CODE,'username':'admin','password':PASS,
           'public_origin':REMOTE,'lan_origins':['http://switchyard.lan:9791']})
@@ -45,7 +45,7 @@ def test_lan_login_remote_requires_mfa_and_session_isolation(configured):
     lan = configured
     assert login(lan, LAN).status_code == 200
     assert lan.get('/api/me').status_code == 200
-    with TestClient(m.app, base_url=REMOTE) as remote:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url=REMOTE) as remote:
         assert remote.get('/api/me').status_code == 401
         assert login(remote, REMOTE).status_code == 403
         assert remote.post('/api/mfa/setup', headers={'origin': REMOTE}, json={'password': PASS}).status_code == 401
@@ -88,9 +88,9 @@ def test_origin_rejection_and_private_ip_auto_detect(configured):
     lan = configured
     assert lan.post('/api/login', headers={'Origin': 'https://attacker.example'}, json={'username': 'admin', 'password': PASS}).status_code == 403
     assert login(lan, LAN).status_code == 200
-    with TestClient(m.app, base_url='http://switchyard.lan:9791') as dns_lan:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url='http://switchyard.lan:9791') as dns_lan:
         assert login(dns_lan, 'http://switchyard.lan:9791').status_code == 200
-    with TestClient(m.app, base_url='http://public-unknown.invalid') as unknown:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url='http://public-unknown.invalid') as unknown:
         assert unknown.get('/api/me').status_code == 403
 
 

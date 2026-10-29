@@ -17,7 +17,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(m, 'DB_FILE', tmp_path / 'data' / 'switchyard.sqlite3')
     with desktops.GUARD:
         desktops.TICKETS.clear(); desktops.ACTIVE.clear(); desktops.SPICE_GROUPS.clear()
-    with TestClient(m.app, base_url='http://testserver') as client:
+    with TestClient(m.app, client=('192.168.0.200', 4432), base_url='http://testserver') as client:
         response = client.post('/api/setup/complete', headers={'Host':'127.0.0.1:9791','Origin':'http://127.0.0.1:9791'}, json={
           'claim_code':m.BOOTSTRAP_CODE,'username':'admin',
           'password':'development-credential-long-enough', 'lan_origins':['http://testserver']})
