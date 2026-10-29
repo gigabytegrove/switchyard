@@ -2,14 +2,14 @@
 
 # Switchyard
 
-**Your infrastructure. One control room.**
+**Infrastructure in motion. Everything in view.**
 
 Self-hosted SSH, SFTP, Docker operations and remote desktops (RDP, VNC, SPICE), with optional Vaultwarden credentials.
 
 [![Source tests and Docker build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.5.0--dev.1-CB562E)
-![Docker](https://img.shields.io/badge/deployment-Docker-263C36?logo=docker)
-![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-2E7362)
+![Version](https://img.shields.io/badge/version-0.5.0--dev.2-B72237)
+![Docker](https://img.shields.io/badge/deployment-Docker-B72237?logo=docker)
+![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-5934AC)
 ![Status](https://img.shields.io/badge/status-development-orange)
 
 [Quick start](#quick-start) · [Setup wizard](#first-run-setup) · [Features](#features) · [Reverse proxy and MFA](#reverse-proxy-and-mfa) · [Upgrades](#upgrading-existing-installations) · [Security](#security-and-limitations)
@@ -20,7 +20,7 @@ Self-hosted SSH, SFTP, Docker operations and remote desktops (RDP, VNC, SPICE), 
 
 ## Quick start
 
-Prerequisites: Linux Docker Engine and the Docker Compose v2 plugin. No `.env`, secrets files, SSH tunnel, CLI password generation, or database editing is required. The Compose deployment consumes prebuilt images and does not need a Docker build context.
+Prerequisites: Linux Docker Engine and the Docker Compose v2 plugin. No `.env`, secrets files, SSH tunnel, configuration YAML, CLI password generation, or database editing is required.
 
 ```bash
 git clone https://github.com/gigabytegrove/switchyard.git
@@ -36,19 +36,13 @@ Open **`http://YOUR-DOCKER-HOST-IP:9791`** on a trusted LAN browser. Use the **o
 docker compose ps
 ```
 
-**Image distribution:** The standard deployment pulls `ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1` and a pinned community-built Guacamole 1.6.0 daemon image from GHCR; it does not contact Docker Hub during deployment. The image build still downloads third-party artifacts in GitHub Actions. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
-
-## Deploying through a raw Docker Compose panel
-
-For systems that accept a pasted Compose document rather than a source checkout, paste the repository's [`compose.yaml`](compose.yaml) directly. It uses **only `image:` references**, no `build:`, no `.env`, and no bind-mounted source code. Keep the same Compose project identity across redeployments so the named data volume survives. Port `9791` must be limited to your trusted LAN; `guacd` has **no** published port. The application image must be publicly readable from GHCR (verify with `docker manifest inspect ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1`).
-
-The Guacamole daemon image is a **third-party rebuild** hosted on GHCR, not Apache's official Docker Hub image. It is pinned to a published digest and the publisher provides signed provenance, but live RDP/VNC interoperability still needs acceptance testing. See [registry recovery notes](docs/registry-recovery.md).
+**Deployment images:** Docker Compose pulls published artifacts from GHCR. The app is built in GitHub Actions; Docker Hub is not required on the deployment host. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
 
 ## First-run setup
 
 1. **Claim the appliance.** Enter the one-time bootstrap code emitted in the container logs. This code changes each time an unconfigured container restarts and is invalidated after setup. Choose an administrator username and password (14-character minimum). Passwords use Argon2id hashes.
 2. **LAN access.** The server already accepts private IP addresses. Optionally supply extra local DNS origins such as `http://switchyard.lan:9791` or `http://ops.home.arpa:9791`.
-3. **Remote access.** Optionally enter the exact HTTPS hostname to use in your reverse proxy (for example `https://switchyard.example.com`). It is stored in SQLite, not a file or environment variable. Remote sign-in is **blocked** until TOTP is enrolled from an authenticated LAN session under **Settings → Two-factor authentication**.
+3. **Remote access.** Optionally enter the exact HTTPS hostname to use in your reverse proxy (for example `https://switchyard.example.com`). It is stored in SQLite, not a file or environment variable. Remote HTTPS sign-in initially uses the administrator password. Optional TOTP can be enrolled from **Settings → Two-factor authentication**; once enabled, all HTTPS proxy sessions require the authenticator code.
 
 After first-run completion, use **Settings → Browser and network access** to update trusted LAN aliases, your HTTPS hostname, and the optional trusted-LAN HTTP Vaultwarden exception. Saving requires the current admin password and revokes other sessions. Settings apply without a container rebuild or restart.
 
@@ -77,15 +71,15 @@ After first-run completion, use **Settings → Browser and network access** to u
 | Runbooks | Saved SSH commands, explicit confirmation, bounded execution, persistent execution outcome history |
 | Health | On-demand Linux metrics, uptime, load, memory, disk and observation history |
 | Vaultwarden | Bitwarden CLI backed login, sync, unlock/lock and item-to-connection credential retrieval |
-| Security | SSH host-key trust, TOTP for HTTPS proxy, session controls, CSRF origin verification, activity journal |
+| Security | SSH host-key trust, optional TOTP for HTTPS proxy, session controls, CSRF origin verification, activity journal |
 | Backups | Consistent database snapshot, host trust, and TOTP recovery key with SHA-256 manifest (sensitive backup) |
 
 ## Reverse proxy and MFA
 
-1. From the trusted LAN URL, sign in and enroll an authenticator under **Settings → Two-factor authentication**. Enter your administrator password, scan or copy the presented authenticator secret, then confirm with the current six-digit code.
+1. Optional: from the trusted LAN URL, sign in and enroll an authenticator under **Settings → Two-factor authentication**. Enter your administrator password, scan or copy the presented authenticator secret, then confirm with the current six-digit code.
 2. Under **Settings → Browser and network access**, enter your actual public **HTTPS origin**. Do not put the public hostname in LAN aliases. No source config edits or restart are required.
 3. In Nginx Proxy Manager, set an HTTPS Proxy Host forwarding to `http://YOUR-DOCKER-HOST-LAN-IP:9791`. Enable **WebSockets Support**, a valid TLS certificate, **Force SSL**, and preserve the original public `Host` header. Reject unmatched hostnames at the proxy.
-4. Open your HTTPS domain and sign in with **username + password + TOTP**. A password-only LAN session is not valid through the remote hostname.
+4. Open your HTTPS domain and sign in with **username + password**, plus TOTP **only if you enabled it**. A LAN login is not accepted as a remote HTTPS session because separate origin-scoped cookies are used.
 
 Equivalent nginx location directives:
 
@@ -99,7 +93,7 @@ proxy_set_header X-Forwarded-Proto https;
 proxy_read_timeout 3600s;
 ```
 
-**Security boundary:** Public-origin classification is based on exact configured `Host` and browser `Origin`; forwarding to it requires an HTTPS reverse proxy that **rejects unknown hostnames**. Never publicly forward TCP 9791. Docker-published host ports may bypass simplistic UFW rules, so test effective host firewall/DOCKER-USER policy. Host-IP LAN connections also require a private source IP (direct WAN attempts are rejected), then use password authentication; public-host sessions always require MFA. SSH and desktop WebSockets enforce the same authentication rules.
+**Security boundary:** Public-origin classification is based on exact configured `Host` and browser `Origin`; forwarding to it requires an HTTPS reverse proxy that **rejects unknown hostnames**. Never publicly forward TCP 9791. Docker-published host ports may bypass simplistic UFW rules, so test effective host firewall/DOCKER-USER policy. Host-IP LAN connections also require a private source IP (direct WAN attempts are rejected), then use password authentication; public-host sessions require MFA only when the administrator enabled it. SSH and desktop WebSockets enforce the same authentication rules.
 
 ## Upgrading existing installations
 
@@ -119,7 +113,7 @@ For an older `.env`/Docker-secret based Switchyard installation, `./scripts/depl
 ## Security and limitations
 
 - Switchyard is a **single-administrator development release**. Multi-user RBAC, SSO, mandatory MFA on every LAN login, and comprehensive production security review remain outstanding.
-- The application uses separate HTTP- and HTTPS-origin cookies. Public sessions require TOTP, with replay prevention and rate limiting. Enrollment and policy changes are LAN-only.
+- The application uses separate HTTP- and HTTPS-origin cookies. When optional TOTP is enabled, public HTTPS sessions require it, with replay prevention and rate limiting. Enrollment and policy changes are LAN-only.
 - RDP/VNC translation runs in a private `guacd` network; the SPICE viewer uses a separate authenticated WebSocket proxy. Neither private gateway port is published on the Docker host.
 - Managed Docker operations occur over SSH against configured hosts. The Switchyard container **does not mount `/var/run/docker.sock`** and is not privileged.
 - Live Windows RDP, third-party VNC, SPICE/QEMU/Proxmox, Vaultwarden API key login, and full browser UI workflows require testing on your own systems. A passing mocked API test or image build is not a real hardware acceptance test.
@@ -140,3 +134,9 @@ Continuous integration: [source tests and Docker browser-runtime build](https://
 ---
 
 **Switchyard** is independent software. It is not affiliated with Nexterm, Apache Guacamole, Bitwarden or Vaultwarden. Apache Guacamole and SPICE HTML5 retain their respective upstream licenses. No production-ready claim is made for this development build.
+
+## Visual identity — signal desk
+
+Switchyard uses a light operational workstation layout inspired by an airport operations board: white (`#FFFFFF`) and mist (`#F5F6F9`), graphite (`#202027`) typography, signal red (`#B72237`) actions, violet (`#5934AC`) secondary indicators. Navigation is horizontal and split between operational and administrative workspaces. Headings use a bold condensed sans-serif, data uses monospace. Flat separators replace the prior green/tan cards. The change is visual only; asset IDs, URLs, permissions, and data layout are preserved.
+
+**MFA policy:** Off by default. No credential, QR, or TOTP entry is required during initial setup. HTTPS proxy sign-in requires the administrator password; once the administrator explicitly enables TOTP in Settings and confirms a scanned code, HTTPS sign-in additionally requires TOTP. Internal LAN sign-ins remain password-only.

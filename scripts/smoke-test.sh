@@ -21,7 +21,7 @@ check_http() {
 
 check_http /healthz 'health endpoint responds'
 grep -Eq '"version"[[:space:]]*:[[:space:]]*"0\.5\.0-dev\.1"' "$TEMP/response" || {
-  echo 'FAIL: running version is not 0.5.0-dev.1' >&2; exit 1;
+  echo 'FAIL: running version is not 0.4.0' >&2; exit 1;
 }
 check_http / 'Switchyard UI responds'
 grep -q 'SWITCHYARD' "$TEMP/response" || { echo 'FAIL: expected UI shell missing' >&2; exit 1; }
@@ -45,4 +45,4 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   fi
   echo 'PASS: guacd has no published host port'
 fi
-echo 'PASS: non-destructive Switchyard v0.5.0-dev.1 smoke checks complete'
+echo 'PASS: non-destructive Switchyard v0.5.0-dev.2 smoke checks complete'

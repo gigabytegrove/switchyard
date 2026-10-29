@@ -47,8 +47,9 @@ def test_lan_login_remote_requires_mfa_and_session_isolation(configured):
     assert lan.get('/api/me').status_code == 200
     with TestClient(m.app, client=('192.168.0.200', 4432), base_url=REMOTE) as remote:
         assert remote.get('/api/me').status_code == 401
-        assert login(remote, REMOTE).status_code == 403
-        assert remote.post('/api/mfa/setup', headers={'origin': REMOTE}, json={'password': PASS}).status_code == 401
+        assert login(remote, REMOTE).status_code == 200
+        assert remote.get('/api/me').status_code == 200
+        assert remote.post('/api/mfa/setup', headers={'origin': REMOTE}, json={'password': PASS}).status_code == 403
         # Spoofed remote Host or Origin on LAN is rejected.
         assert lan.post('/api/mfa/setup', headers={'origin': REMOTE}, json={'password': PASS}).status_code == 403
         response = lan.post('/api/mfa/setup', headers={'origin': LAN}, json={'password': PASS})
@@ -56,6 +57,9 @@ def test_lan_login_remote_requires_mfa_and_session_isolation(configured):
         secret = response.json()['secret']
         assert len(secret) == 32
         assert response.json()['otpauth_uri'].startswith('otpauth://totp/Switchyard:admin?')
+        assert response.json()['qr_data_uri'].startswith('data:image/svg+xml;base64,')
+        qr_svg = base64.b64decode(response.json()['qr_data_uri'].split(',', 1)[1])
+        assert b'<svg' in qr_svg and b'<path' in qr_svg
         assert secret not in str(lan.get('/api/mfa/status').json())
         assert lan.post('/api/mfa/enable', headers={'origin': LAN}, json={'code': 'wrong'}).status_code == 422
         confirmed = lan.post('/api/mfa/enable', headers={'origin': LAN}, json={'code': otp(secret)})
@@ -81,7 +85,8 @@ def test_lan_login_remote_requires_mfa_and_session_isolation(configured):
             disabled = lan.post('/api/mfa/disable', headers={'origin': LAN}, json={'password': PASS, 'code': otp(secret, current_step + 2)})
             assert disabled.status_code == 200, disabled.text
             assert remote.get('/api/me').status_code == 401
-            assert login(remote, REMOTE).status_code == 403
+            assert login(remote, REMOTE).status_code == 200
+        assert remote.get('/api/me').status_code == 200
 
 
 def test_origin_rejection_and_private_ip_auto_detect(configured):

@@ -1056,10 +1056,10 @@ async function refreshMfaStatus() {
   const state = await api('/mfa/status');
   $('#mfaStatus').textContent = state.enabled
     ? 'Enabled. Remote HTTPS sign-in requires a 6-digit authenticator code.'
-    : 'Disabled. Remote HTTPS sign-in is blocked until enrollment.';
+    : 'Off (optional). Password-only sign-in works on the LAN and through your configured HTTPS proxy.';
   $('#mfaSetupForm').classList.toggle('hidden', state.enabled);
   $('#mfaDisableForm').classList.toggle('hidden', !state.enabled);
-  if (state.enabled) $('#mfaEnrollment').classList.add('hidden');
+  if (state.enabled) { $('#mfaEnrollment').classList.add('hidden'); $('#mfaQr').removeAttribute('src'); $('#mfaQr').classList.add('hidden'); }
 }
 
 let setupStep = 0;
@@ -1209,6 +1209,10 @@ function bind() {
     event.target.reset();
     $('#mfaSecret').textContent = result.secret;
     $('#mfaUri').setAttribute('href', result.otpauth_uri);
+    const qr = $('#mfaQr');
+    if (!result.qr_data_uri?.startsWith('data:image/svg+xml;base64,')) throw new Error('Authenticator QR image unavailable');
+    qr.src = result.qr_data_uri;
+    qr.classList.remove('hidden');
     $('#mfaEnrollment').classList.remove('hidden');
     toast('Authenticator enrollment started. Verify a code to enable MFA.');
   }));
@@ -1218,17 +1222,19 @@ function bind() {
     event.target.reset();
     $('#mfaSecret').textContent = '';
     $('#mfaUri').removeAttribute('href');
+    $('#mfaQr').removeAttribute('src');
+    $('#mfaQr').classList.add('hidden');
     $('#mfaEnrollment').classList.add('hidden');
     await refreshMfaStatus();
-    toast('MFA enabled for external HTTPS sign-in.');
+    toast('Authenticator verified. MFA is now enabled for external HTTPS sign-in.');
   }));
   $('#mfaDisableForm').addEventListener('submit', safeAsync(async event => {
     event.preventDefault();
-    if (!confirm('Disable remote-access MFA? External logins will be blocked until MFA is enrolled again.')) return;
+    if (!confirm('Disable optional authenticator MFA? External HTTPS sign-ins will then require only your administrator password.')) return;
     await api('/mfa/disable', { method: 'POST', body: {password: $('#mfaDisablePassword').value, code: $('#mfaDisableCode').value.trim()} });
     event.target.reset();
     await refreshMfaStatus();
-    toast('MFA disabled. External sign-in is now blocked.');
+    toast('MFA disabled. External HTTPS sign-in now uses username and password.');
   }));
   $('#passwordForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/password', { method: 'POST', body: { current_password: $('#currentPassword').value, new_password: $('#newPassword').value } }); event.target.reset(); toast('Administrator password changed.'); }));
   window.addEventListener('resize', () => { if (state.page === 'terminals' && state.currentTab) state.tabs.get(state.currentTab)?.fit.fit(); });

@@ -9,7 +9,7 @@ def test_private_guacamole_network_and_no_privileged_socket():
     compose = (ROOT / 'compose.yaml').read_text()
     assert re.search(r'^  guacd:\s*$', compose, re.M)
     assert 'ghcr.io/quenchworks/images/guacd@sha256:caf62c36625a2ffb3adfc2bcc51572ab4e7f5e805ae3b55f3800812eeaf3c411' in compose
-    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1' in compose
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.0-dev.2' in compose
     assert not re.search(r'^\s+build:', compose, re.M), 'raw Compose must not require source code'
     assert 'remote_access:\n    internal: true' in compose
     assert 'GUACD_HOST:' not in compose
@@ -41,7 +41,7 @@ def test_runtime_assets_and_isolated_spice_shell_are_packaged():
 
 def test_release_version_consistency():
     version = (ROOT / 'VERSION').read_text().strip()
-    assert version == '0.5.0-dev.1'
-    assert 'switchyard:0.5.0-dev.1' in (ROOT / 'compose.yaml').read_text()
-    assert 'version-0.5.0--dev.1' in (ROOT / 'README.md').read_text()
-    assert '## 0.5.0-dev.1' in (ROOT / 'CHANGELOG.md').read_text()
+    assert version == '0.5.0-dev.2'
+    assert 'switchyard:0.5.0-dev.2' in (ROOT / 'compose.yaml').read_text()
+    assert 'version-0.5.0--dev.2' in (ROOT / 'README.md').read_text()
+    assert '## 0.5.0-dev.2' in (ROOT / 'CHANGELOG.md').read_text()

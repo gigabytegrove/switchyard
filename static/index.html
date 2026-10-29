@@ -37,10 +37,10 @@
           <label for="setupLanOrigins">Optional local DNS browser addresses (one per line)</label>
           <textarea id="setupLanOrigins" rows="3" placeholder="http://switchyard.lan:9791
 http://ops.home.arpa:9791"></textarea>
-          <p class="settings-hint">Private IP URLs work automatically. Public DNS names cannot bypass external MFA.</p>
+          <p class="settings-hint">Private IP URLs work automatically. MFA is optional and can be enabled later in Settings.</p>
         </div>
         <div data-setup-step="2" class="hidden">
-          <h2>Remote access.</h2><p>Optionally save the HTTPS hostname used by Nginx Proxy Manager. Remote sessions will remain blocked until TOTP is enrolled in Settings.</p>
+          <h2>Remote access.</h2><p>Optionally save the HTTPS hostname used by your reverse proxy. Remote access uses your administrator password; authenticator MFA can be enabled later in Settings.</p>
           <label for="setupPublicOrigin">Public HTTPS origin (optional)</label><input id="setupPublicOrigin" type="url" placeholder="https://switchyard.example.com" autocomplete="url">
           <p class="settings-hint">Use your real reverse-proxy hostname. TLS certificates and proxy routing are configured in the proxy; no direct WAN port forwarding.</p>
           <p><strong>Configuration:</strong> persisted in /data/switchyard.sqlite3. Administrator password is stored as an Argon2id hash.</p>
@@ -66,8 +66,8 @@ http://ops.home.arpa:9791"></textarea>
         <input id="loginUsername" autocomplete="username" required value="admin">
         <label for="loginPassword">Password</label>
         <input id="loginPassword" type="password" autocomplete="current-password" required>
-        <label for="loginTotp">Authenticator code (required for remote HTTPS access)</label>
-        <input id="loginTotp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="Six digits — LAN optional">
+        <label for="loginTotp">Authenticator code (only if you enabled MFA)</label>
+        <input id="loginTotp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="Six digits when MFA is enabled">
         <button class="action-primary" type="submit">Enter Switchyard <span aria-hidden="true">↗</span></button>
         <small id="loginError" class="form-error" role="alert"></small>
       </form>
@@ -75,7 +75,7 @@ http://ops.home.arpa:9791"></textarea>
   </main>
   <div id="shell" class="shell hidden">
     <aside class="sidebar" aria-label="Primary navigation">
-      <div class="brand"><span class="sigil">S<span>↗</span></span><div><strong>SWITCHYARD</strong><small>OPERATIONS / 0.4</small></div></div>
+      <div class="brand"><span class="sigil">S<span>↗</span></span><div><strong>SWITCHYARD</strong><small>OPERATIONS / 0.5</small></div></div>
       <div class="nav-label">WORKSPACE</div>
       <nav id="navigation">
         <button data-page="overview" class="nav-item active"><span class="nav-symbol">◫</span> Overview</button>
@@ -98,7 +98,7 @@ http://ops.home.arpa:9791"></textarea>
       <div class="sidebar-bottom"><div class="account-circle">A</div><div class="account-text"><strong>Administrator</strong><span>Local account</span></div><button id="logoutBtn" class="signout" title="Sign out" aria-label="Sign out">↗</button></div>
     </aside>
     <main class="body-pane">
-      <header class="topbar"><div class="breadcrumb"><span>SWITCHYARD</span><b>/</b><strong id="bread">Overview</strong></div><div class="top-right"><span class="online"><i></i> Gateway available</span><span id="clock"></span></div></header>
+      <header class="topbar"><div class="route-mark" aria-hidden="true"><span></span><span></span><span></span></div><div class="breadcrumb"><span>SWITCHYARD</span><b>/</b><strong id="bread">Overview</strong></div><div class="top-right"><span class="online"><i></i> Gateway available</span><span id="clock"></span></div></header>
       <section id="page-overview" class="page content-page">
         <div class="section-kicker">01 — CONTROL ROOM</div>
         <div class="heading-row"><div><h1>Good to see you.</h1><p>Your infrastructure, without the clutter.</p></div><button class="action-primary" data-action="new-asset">+ Add a connection</button></div>
@@ -160,11 +160,11 @@ http://ops.home.arpa:9791"></textarea>
       </section>
       <section id="page-trust" class="page content-page hidden"><div class="section-kicker">07 — CONNECTION INTEGRITY</div><div class="heading-row"><div><h1>Trusted hosts.</h1><p>Review a fingerprint before granting a machine access.</p></div></div><form id="scanForm" class="inline-form"><label>Hostname or IP<input id="scanHost" required placeholder="192.168.1.10"></label><label>SSH port<input id="scanPort" type="number" value="22" min="1" max="65535" required></label><button type="submit" class="action-small">Retrieve host key</button></form><div id="scanResult" class="hidden fingerprint-review"></div><div class="two-heading"><h2>Accepted fingerprints</h2><button id="refreshHosts" class="text-button">Refresh →</button></div><div id="trustedList" class="asset-table"></div></section>
       <section id="page-activity" class="page content-page hidden"><div class="section-kicker">08 — AUDIT JOURNAL</div><div class="heading-row"><div><h1>Everything leaves a trace.</h1><p>Connection attempts, vault actions, asset changes and file transfers.</p></div><div class="form-actions"><button class="action-small" id="auditRefresh">Refresh journal</button><button class="action-quiet" id="auditExport">Export CSV</button></div></div><div class="file-controls"><label>Filter by action<input id="auditFilter" placeholder="docker.restart"></label><button id="auditApply" class="action-small">Apply</button><button id="auditReset" class="action-quiet">Reset</button></div><div id="auditList" class="asset-table"></div><div class="form-actions"><button id="auditMore" class="action-small">Load older events</button></div></section>
-      <section id="page-settings" class="page content-page hidden"><div class="section-kicker">09 — CONTROL SETTINGS</div><div class="heading-row"><div><h1>Keep it secure.</h1><p>Small decisions that protect the whole control room.</p></div></div><form id="passwordForm" class="panel-form settings-form"><h2>Change administrator password</h2><label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password" required><label for="newPassword">New password (at least 14 characters)</label><input id="newPassword" type="password" autocomplete="new-password" minlength="14" required><button class="action-primary" type="submit">Update password</button></form><div class="settings-note"><h2>Two-factor authentication</h2><p id="mfaStatus">Checking MFA settings…</p><p>Required for public HTTPS proxy access. LAN access remains username and password. Enroll from a trusted LAN device.</p>
+      <section id="page-settings" class="page content-page hidden"><div class="section-kicker">09 — CONTROL SETTINGS</div><div class="heading-row"><div><h1>Keep it secure.</h1><p>Small decisions that protect the whole control room.</p></div></div><form id="passwordForm" class="panel-form settings-form"><h2>Change administrator password</h2><label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password" required><label for="newPassword">New password (at least 14 characters)</label><input id="newPassword" type="password" autocomplete="new-password" minlength="14" required><button class="action-primary" type="submit">Update password</button></form><div class="settings-note"><h2>Two-factor authentication</h2><p id="mfaStatus">Checking MFA settings…</p><p>Optional. Leave it off to sign in with your administrator password on LAN and HTTPS. If enabled, HTTPS sign-in will require a verified authenticator code. Enroll from a trusted LAN browser.</p>
       <form id="mfaSetupForm" class="panel-form"><label for="mfaSetupPassword">Current administrator password</label><input id="mfaSetupPassword" type="password" autocomplete="current-password" required><button type="submit" class="action-small">Start authenticator setup</button></form>
-      <div id="mfaEnrollment" class="hidden"><p>Enter this key in your authenticator app. It expires in ten minutes. Do not share it.</p><code id="mfaSecret"></code><p><a id="mfaUri">Open authenticator app</a></p><form id="mfaEnableForm" class="panel-form"><label for="mfaEnableCode">Confirm 6-digit code</label><input id="mfaEnableCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required><button type="submit" class="action-primary">Enable MFA</button></form></div>
-      <form id="mfaDisableForm" class="panel-form hidden"><h3>Disable MFA</h3><p>Remote sign-in will be blocked until MFA is configured again.</p><label for="mfaDisablePassword">Current password</label><input id="mfaDisablePassword" type="password" autocomplete="current-password" required><label for="mfaDisableCode">Current unused authenticator code</label><input id="mfaDisableCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required><button type="submit" class="action-quiet">Disable MFA</button></form></div>
-      <div class="settings-note"><h2>Browser and network access</h2><p>Stored in Switchyard's persistent internal database; changes apply immediately. LAN IPs work without manual configuration. Public HTTPS hostnames always require MFA.</p>
+      <div id="mfaEnrollment" class="hidden"><p>Scan the QR code with your authenticator app, or enter the key manually. This code expires in ten minutes. Do not share it.</p><img id="mfaQr" class="mfa-qr hidden" alt="Scan this QR code with your authenticator app" width="228" height="228"><code id="mfaSecret"></code><p><a id="mfaUri">Open authenticator app</a></p><form id="mfaEnableForm" class="panel-form"><label for="mfaEnableCode">Confirm 6-digit code</label><input id="mfaEnableCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required><button type="submit" class="action-primary">Enable MFA</button></form></div>
+      <form id="mfaDisableForm" class="panel-form hidden"><h3>Disable MFA</h3><p>When disabled, remote HTTPS access uses username and password only.</p><label for="mfaDisablePassword">Current password</label><input id="mfaDisablePassword" type="password" autocomplete="current-password" required><label for="mfaDisableCode">Current unused authenticator code</label><input id="mfaDisableCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required><button type="submit" class="action-quiet">Disable MFA</button></form></div>
+      <div class="settings-note"><h2>Browser and network access</h2><p>Stored in Switchyard's persistent internal database; changes apply immediately. LAN IPs work without manual configuration. Public HTTPS hostnames use password authentication; MFA is optional and is enforced only after verified enrollment.</p>
       <form id="networkForm" class="panel-form settings-form">
         <label for="networkLan">Additional LAN DNS origins (one per line)</label><textarea id="networkLan" rows="3" placeholder="http://switchyard.lan:9791"></textarea>
         <label for="networkPublic">Public HTTPS reverse-proxy origin</label><input id="networkPublic" type="url" placeholder="https://switchyard.example.com">

@@ -60,7 +60,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='Switchyard', version='0.5.0-dev.1', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title='Switchyard', version='0.5.0-dev.2', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 def connection():
@@ -264,7 +264,14 @@ def valid_session(token: str | None, require_mfa: bool = False) -> bool:
     with dbconn() as db:
         row = db.execute('SELECT mfa_verified FROM sessions WHERE token_hash=? AND expires_at>?',
                          (session_hash(token), int(time.time()))).fetchone()
-        return bool(row and (not require_mfa or row['mfa_verified']))
+        if not row:
+            return False
+        if not require_mfa:
+            return True
+        # MFA is opt-in. Once enrolled, HTTPS sessions must be independently
+        # MFA-verified; prior password-only remote sessions cannot be reused.
+        enrollment = db.execute('SELECT 1 FROM users WHERE mfa_secret IS NOT NULL LIMIT 1').fetchone()
+        return not enrollment or bool(row['mfa_verified'])
 
 
 def verify_origin(request: Request) -> bool:
@@ -406,7 +413,7 @@ def setup_complete(body: InitialSetup, request: Request):
 
 @app.get('/healthz')
 def health():
-    return {'status': 'ok', 'version': '0.5.0-dev.1'}
+    return {'status': 'ok', 'version': '0.5.0-dev.2'}
 
 
 @app.post('/api/login')
@@ -438,16 +445,15 @@ def login(body: Credentials, request: Request, response: Response):
         mfa_ok = False
         if remote:
             stored = db.execute('SELECT mfa_secret, mfa_last_step FROM users WHERE id=?', (user['id'],)).fetchone()
-            if not stored['mfa_secret']:
-                raise HTTPException(403, 'Set up authenticator MFA in Settings from the LAN before remote access')
-            step = totp_step(decrypted_mfa(stored['mfa_secret']), body.totp)
-            if step is None or step <= stored['mfa_last_step']:
-                with LOCK:
-                    FAILED.setdefault(ip, []).append(now)
-                audit('login.mfa', outcome='rejected')
-                raise HTTPException(401, 'Valid 6-digit authenticator code required')
-            db.execute('UPDATE users SET mfa_last_step=? WHERE id=?', (step, user['id']))
-            mfa_ok = True
+            if stored['mfa_secret']:
+                step = totp_step(decrypted_mfa(stored['mfa_secret']), body.totp)
+                if step is None or step <= stored['mfa_last_step']:
+                    with LOCK:
+                        FAILED.setdefault(ip, []).append(now)
+                    audit('login.mfa', outcome='rejected')
+                    raise HTTPException(401, 'Valid 6-digit authenticator code required')
+                db.execute('UPDATE users SET mfa_last_step=? WHERE id=?', (step, user['id']))
+                mfa_ok = True
         token = secrets.token_hex(32)
         db.execute('INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified) VALUES(?,?,?,?)',
                    (session_hash(token), user['id'], int(time.time()) + SESSION_TTL, int(mfa_ok)))
@@ -543,8 +549,12 @@ def mfa_setup(body: MfaSetupRequest, request: Request, _=Depends(require_auth)):
     from urllib.parse import quote
     issuer = 'Switchyard'
     uri = f'otpauth://totp/{issuer}:{quote(username)}?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits=6&period=30'
+    import qrcode
+    from qrcode.image.svg import SvgPathImage
+    qr_svg = qrcode.make(uri, image_factory=SvgPathImage, box_size=6, border=4).to_string()
+    qr_data_uri = 'data:image/svg+xml;base64,' + base64.b64encode(qr_svg).decode('ascii')
     audit('mfa.enrollment.started')
-    return {'secret': secret, 'otpauth_uri': uri, 'expires_seconds': 600}
+    return {'secret': secret, 'otpauth_uri': uri, 'qr_data_uri': qr_data_uri, 'expires_seconds': 600}
 
 
 @app.post('/api/mfa/enable')
@@ -775,7 +785,7 @@ def backup(_=Depends(require_auth)):
         if mfa_key and (len(mfa_key) != 44 or keyfile.stat().st_mode & 0o077):
             raise HTTPException(503, 'Stored MFA key has invalid format or permissions')
         manifest = {
-            'application': 'Switchyard', 'format': 2, 'version': '0.5.0-dev.1',
+            'application': 'Switchyard', 'format': 2, 'version': '0.5.0-dev.2',
             'created_utc': datetime.now(timezone.utc).isoformat(),
             'files': {'switchyard.sqlite3': hashlib.sha256(content).hexdigest(),
                       'known_hosts': hashlib.sha256(hosts).hexdigest(),

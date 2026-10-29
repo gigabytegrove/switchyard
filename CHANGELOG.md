@@ -1,10 +1,18 @@
+## 0.5.0-dev.2
+
+- Fixed unintended mandatory remote MFA: HTTPS proxy access works with password alone until MFA is explicitly enrolled. Existing enabled MFA remains enforced.
+- Added QR-code enrollment to Settings, rendered server-side without uploading authenticator secrets to third parties.
+- Replaced forest/tan editorial presentation with a signal-red and graphite horizontal operations workbench; kept data models and workflows unchanged.
+- Added regression tests covering optional MFA, enrollment QR, enabled MFA challenges, and session separation.
+- Build and publish a separately versioned development container image after CI verification.
+
 # Switchyard changes
 
 ## 0.5.0-dev.1 — container-owned first-run configuration and LAN/proxy policy (2026-10-28)
 
 - Replace `.env`, external admin secrets, MFA key mounts and Compose variable interpolation with a first-run web wizard protected by a one-time log-only claim code.
 - Store admin account, allowed LAN DNS browser origins and exact HTTPS reverse-proxy hostname in the persistent SQLite database; automatically maintain `/data/mfa.key` with restricted permissions.
-- Make LAN binding `0.0.0.0:9791` without SSH tunneling; require password on LAN, MFA on the configured public HTTPS hostname, including terminal/desktop WebSocket checks.
+- Make LAN binding `0.0.0.0:9791` without SSH tunneling; require password on LAN, with opt-in MFA on the configured public HTTPS hostname, including terminal/desktop WebSocket checks.
 - Add authenticated LAN-only network settings editor requiring admin password, applying changes without restart and revoking other sessions.
 - Migrate preexisting Docker-secret MFA key from running old container before Compose recreation; fail closed when previously enrolled key material is missing.
 - Reject public-source connections masquerading as private LAN Host addresses; include TOTP decryption key (only when present) in sensitive backup ZIP for recovery, with manifest and clear warnings; continue excluding SSH private keys and Vaultwarden CLI cache.
