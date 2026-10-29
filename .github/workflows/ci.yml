@@ -33,3 +33,18 @@ jobs:
         run: docker build --pull --tag switchyard:test .
       - name: Check image includes mandatory runtime assets
         run: docker run --rm --entrypoint /bin/bash switchyard:test /usr/local/bin/verify-runtime-assets /app/static
+      - name: Start disposable Compose installation and exercise HTTP routes
+        run: |
+          docker tag switchyard:test switchyard:0.4.0
+          mkdir -p secrets
+          printf '%s\n' 'github-actions-disposable-ci-password' > secrets/admin_password.txt
+          chmod 644 secrets/admin_password.txt
+          printf 'PUBLIC_ORIGIN=http://127.0.0.1:9791\nCOOKIE_SECURE=false\nSWITCHYARD_BIND=127.0.0.1\n' > .env
+          docker compose up -d --no-build --wait --wait-timeout 120
+          bash scripts/smoke-test.sh
+      - name: Capture Compose logs on failure
+        if: failure()
+        run: docker compose logs --tail=200 || true
+      - name: Remove disposable Compose services and volumes
+        if: always()
+        run: docker compose down -v --remove-orphans || true
