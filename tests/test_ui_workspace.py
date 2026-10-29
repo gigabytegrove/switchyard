@@ -59,3 +59,10 @@ def test_live_session_host_scoping():
     assert "normalizedHost(t.asset.host) !== state.machineHost) continue" in JS
     assert "normalizedHost(state.tabs.get(id).asset.host) === state.machineHost" in JS
     assert 'machineTab(available[next].dataset.machineTab)' in JS
+
+def test_smoke_test_tracks_release_version_file():
+    smoke = (ROOT / 'scripts/smoke-test.sh').read_text()
+    assert 'expected_version="$(tr -d' in smoke
+    assert 'expected_regex=' in smoke
+    assert 'running version does not match $expected_version' in smoke
+    assert '0\\.5\\.1-dev\\.1' not in smoke
