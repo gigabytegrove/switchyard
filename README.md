@@ -20,7 +20,7 @@ Self-hosted SSH, SFTP, Docker operations and remote desktops (RDP, VNC, SPICE), 
 
 ## Quick start
 
-Prerequisites: Linux Docker Engine and the Docker Compose v2 plugin. No `.env`, secrets files, SSH tunnel, configuration YAML, CLI password generation, or database editing is required.
+Prerequisites: Linux Docker Engine and the Docker Compose v2 plugin. No `.env`, secrets files, SSH tunnel, CLI password generation, or database editing is required. The Compose deployment consumes prebuilt images and does not need a Docker build context.
 
 ```bash
 git clone https://github.com/gigabytegrove/switchyard.git
@@ -36,7 +36,13 @@ Open **`http://YOUR-DOCKER-HOST-IP:9791`** on a trusted LAN browser. Use the **o
 docker compose ps
 ```
 
-**Note:** `docker compose build` downloads third-party browser dependencies and a Guacamole artifact. First build requires Internet access. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
+**Image distribution:** The standard deployment pulls `ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1` and a pinned community-built Guacamole 1.6.0 daemon image from GHCR; it does not contact Docker Hub during deployment. The image build still downloads third-party artifacts in GitHub Actions. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
+
+## Deploying through a raw Docker Compose panel
+
+For systems that accept a pasted Compose document rather than a source checkout, paste the repository's [`compose.yaml`](compose.yaml) directly. It uses **only `image:` references**, no `build:`, no `.env`, and no bind-mounted source code. Keep the same Compose project identity across redeployments so the named data volume survives. Port `9791` must be limited to your trusted LAN; `guacd` has **no** published port. The application image must be publicly readable from GHCR (verify with `docker manifest inspect ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1`).
+
+The Guacamole daemon image is a **third-party rebuild** hosted on GHCR, not Apache's official Docker Hub image. It is pinned to a published digest and the publisher provides signed provenance, but live RDP/VNC interoperability still needs acceptance testing. See [registry recovery notes](docs/registry-recovery.md).
 
 ## First-run setup
 

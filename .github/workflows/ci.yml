@@ -29,15 +29,17 @@ jobs:
   image-build:
     runs-on: ubuntu-24.04
     needs: source-tests
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image with browser runtime assets
-        run: docker build --pull --tag switchyard:test .
+        run: docker build --pull --label org.opencontainers.image.source=https://github.com/gigabytegrove/switchyard --tag ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1 .
       - name: Check image includes mandatory runtime assets
-        run: docker run --rm --entrypoint /bin/bash switchyard:test /usr/local/bin/verify-runtime-assets /app/static
+        run: docker run --rm --entrypoint /bin/bash ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1 /usr/local/bin/verify-runtime-assets /app/static
       - name: Start disposable zero-configuration Compose deployment
         run: |
-          docker tag switchyard:test switchyard:0.5.0-dev.1
           test ! -e .env
           test ! -e secrets
           docker compose up -d --no-build --wait
@@ -68,6 +70,16 @@ jobs:
           assert json.loads(request('/api/network',cookie=cookie).read())['lan_origins']==[]
           print('PASS: clean first boot, claim code, account setup, login, and persistent network configuration')
           PY
+      - name: Authenticate to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish verified application image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker push ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1
       - name: Capture Compose logs on failure
         if: failure()
         run: docker compose logs --tail=200 || true

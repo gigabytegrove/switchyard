@@ -31,8 +31,8 @@ if [[ -f .env || -d secrets ]]; then
 fi
 
 docker compose config --quiet
-docker compose build --pull
-docker compose up -d --wait
+docker compose pull
+docker compose up -d --no-build --wait
 docker compose ps
 printf '\nSwitchyard LAN: http://DOCKER-HOST-IP:9791\n'
 if docker compose logs --no-color switchyard | grep -q 'SWITCHYARD FIRST-RUN CLAIM CODE:'; then
