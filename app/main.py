@@ -13,6 +13,8 @@ import tempfile
 import zipfile
 import hmac
 import io
+import ipaddress
+import struct
 import json
 import os
 import re
@@ -33,6 +35,7 @@ from . import desktops
 from urllib.parse import urlsplit
 
 from argon2 import PasswordHasher
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Cookie, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -85,7 +88,7 @@ def init_data():
         );
         CREATE TABLE IF NOT EXISTS sessions (
           token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
-          expires_at INTEGER NOT NULL
+          expires_at INTEGER NOT NULL, mfa_verified INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS assets (
           id TEXT PRIMARY KEY, label TEXT NOT NULL, host TEXT NOT NULL,
@@ -125,6 +128,16 @@ def init_data():
         );
         CREATE INDEX IF NOT EXISTS snapshot_asset_idx ON host_snapshots(asset_id, id DESC);
         ''')
+        # Additive migration; preserve existing users and sessions.
+        for table, column, definition in (
+            ('users', 'mfa_secret', 'TEXT'),
+            ('users', 'mfa_pending', 'TEXT'),
+            ('users', 'mfa_pending_until', 'INTEGER'),
+            ('users', 'mfa_last_step', 'INTEGER NOT NULL DEFAULT -1'),
+            ('sessions', 'mfa_verified', 'INTEGER NOT NULL DEFAULT 0'),
+        ):
+            if column not in {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}:
+                db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
         existing = db.execute('SELECT 1 FROM users LIMIT 1').fetchone()
         if not existing:
             pfile = os.getenv('ADMIN_PASSWORD_FILE', '')
@@ -133,7 +146,7 @@ def init_data():
             password = Path(pfile).read_text().strip('\r\n')
             if len(password) < 14:
                 raise RuntimeError('Admin bootstrap password must be at least 14 characters')
-            db.execute('INSERT INTO users VALUES(1,?,?,?)', ('admin', HASHER.hash(password), int(time.time())))
+            db.execute('INSERT INTO users(id,username,password_hash,created_at) VALUES(1,?,?,?)', ('admin', HASHER.hash(password), int(time.time())))
         db.execute('DELETE FROM sessions WHERE expires_at < ?', (int(time.time()),))
     desktops.initialize(dbconn)
     keys = DATA / 'keys'
@@ -154,42 +167,127 @@ def session_hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def valid_session(token: str | None) -> bool:
+def configured_remote_origin() -> str:
+    return os.getenv('PUBLIC_ORIGIN', '').strip().rstrip('/')
+
+
+def browser_origin(scope) -> tuple[str, bool]:
+    """Require an explicitly trusted hostname. Never trust forwarded IP headers."""
+    host = (scope.headers.get('host') or '').lower()
+    if not host or '/' in host or '@' in host or ',' in host or '\\' in host:
+        raise HTTPException(403, 'Untrusted host')
+    remote = configured_remote_origin()
+    if remote:
+        parsed = urlsplit(remote)
+        if parsed.scheme == 'http' and parsed.netloc.lower() == host:
+            # Legacy test/development origin only; production deploy script disallows HTTP.
+            return remote, False
+        if parsed.scheme != 'https' or not parsed.hostname or parsed.path or parsed.query or parsed.fragment:
+            raise HTTPException(503, 'Invalid PUBLIC_ORIGIN configuration')
+        if host == parsed.netloc.lower():
+            return remote, True
+    lan_hosts = [item.strip().rstrip('/') for item in os.getenv('LAN_ORIGINS', '').split(',') if item.strip()]
+    for lan in lan_hosts:
+        parsed = urlsplit(lan)
+        if parsed.scheme not in ('http', 'https') or parsed.path or parsed.query or parsed.fragment:
+            raise HTTPException(503, 'Invalid LAN_ORIGINS configuration')
+        if host == parsed.netloc.lower():
+            return lan, False
+    # Bare private/link-local addresses (and localhost) can be reached on the LAN.
+    address = host
+    if address.startswith('['):
+        address = address[1:].split(']', 1)[0]
+    else:
+        address = address.rsplit(':', 1)[0] if ':' in address else address
+    try:
+        ip = ipaddress.ip_address(address)
+        trusted = any(ip in network for network in (
+            ipaddress.ip_network('10.0.0.0/8'), ipaddress.ip_network('172.16.0.0/12'),
+            ipaddress.ip_network('192.168.0.0/16'), ipaddress.ip_network('127.0.0.0/8'),
+            ipaddress.ip_network('169.254.0.0/16'), ipaddress.ip_network('fc00::/7'),
+            ipaddress.ip_network('fe80::/10'), ipaddress.ip_network('::1/128'))) 
+    except ValueError:
+        trusted = address == 'localhost'
+    if trusted:
+        # The network layer (firewall) must actually limit this endpoint to LAN.
+        scheme = 'https' if scope.url.scheme in ('https', 'wss') else 'http'
+        return f'{scheme}://{host}', False
+    # Preserve existing configured HTTP development test origins, but never
+    # mistake them for an external MFA-optional public deployment.
+    if remote.startswith('http://') and urlsplit(remote).netloc.lower() == host:
+        return remote, False
+    raise HTTPException(403, 'Host is not permitted. Configure LAN_ORIGINS or PUBLIC_ORIGIN.')
+
+
+def valid_session(token: str | None, require_mfa: bool = False) -> bool:
     if not token or len(token) != 64:
         return False
     with dbconn() as db:
-        return bool(db.execute('SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?',
-                               (session_hash(token), int(time.time()))).fetchone())
+        row = db.execute('SELECT mfa_verified FROM sessions WHERE token_hash=? AND expires_at>?',
+                         (session_hash(token), int(time.time()))).fetchone()
+        return bool(row and (not require_mfa or row['mfa_verified']))
 
 
-def verify_origin(request: Request):
+def verify_origin(request: Request) -> bool:
+    expected, remote = browser_origin(request)
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
-        # No cross-origin mutations, including DNS/reverse proxy scenarios.
-        origin = request.headers.get('origin', '')
-        expected = os.getenv('PUBLIC_ORIGIN', f'{request.url.scheme}://{request.headers.get("host", "")}').rstrip('/')
-        if not origin or origin != expected:
+        if request.headers.get('origin') != expected:
             raise HTTPException(403, 'Origin validation failed')
+    return remote
 
 
 def require_auth(request: Request, switchyard_session: Annotated[str | None, Cookie()] = None):
-    verify_origin(request)
-    if not valid_session(switchyard_session):
-        raise HTTPException(401, 'Authentication required')
+    remote = verify_origin(request)
+    if not valid_session(switchyard_session, require_mfa=remote):
+        raise HTTPException(401, 'Authentication required' if not remote else 'MFA-authenticated session required')
     return 'admin'
 
 
 def session_from_ws(ws: WebSocket) -> bool:
-    origin = ws.headers.get('origin')
-    host = ws.headers.get('host')
-    expected = ('wss' if ws.url.scheme == 'wss' else 'ws') + '://' + (host or '')
-    # Origin is http(s), not ws(s).
-    expected = expected.replace('wss://', 'https://').replace('ws://', 'http://')
-    return origin == os.getenv('PUBLIC_ORIGIN', expected).rstrip('/') and valid_session(ws.cookies.get('switchyard_session'))
+    try:
+        expected, remote = browser_origin(ws)
+    except HTTPException:
+        return False
+    return ws.headers.get('origin') == expected and valid_session(ws.cookies.get('switchyard_session'), require_mfa=remote)
 
+
+def mfa_cipher() -> Fernet:
+    key_path = os.getenv('MFA_KEY_FILE', '')
+    try:
+        if not key_path:
+            raise OSError('MFA_KEY_FILE not configured')
+        return Fernet(Path(key_path).read_bytes().strip())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, 'MFA encryption key not available') from exc
+
+
+def totp_step(secret: str, code: str, now: int | None = None) -> int | None:
+    if not re.fullmatch(r'[0-9]{6}', code):
+        return None
+    try:
+        key = base64.b32decode(secret, casefold=True)
+    except (ValueError, base64.binascii.Error):
+        return None
+    current = int(time.time() if now is None else now) // 30
+    for step in (current, current - 1, current + 1):
+        digest = hmac.new(key, struct.pack('>Q', step), hashlib.sha1).digest()
+        offset = digest[-1] & 15
+        value = (struct.unpack('>I', digest[offset:offset+4])[0] & 0x7fffffff) % 1000000
+        if hmac.compare_digest(f'{value:06d}', code):
+            return step
+    return None
+
+
+def decrypted_mfa(value: str) -> str:
+    try:
+        return mfa_cipher().decrypt(value.encode()).decode('ascii')
+    except (InvalidToken, UnicodeError) as exc:
+        raise HTTPException(503, 'Stored MFA configuration cannot be decrypted') from exc
 
 class Credentials(BaseModel):
     username: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=4096)
+    totp: str = Field(default='', max_length=6)
 
 
 @app.get('/healthz')
@@ -219,12 +317,27 @@ def login(body: Credentials, request: Request, response: Response):
                 FAILED.setdefault(ip, []).append(now)
             audit('login', outcome='rejected')
             raise HTTPException(401, 'Invalid credentials')
+        remote = browser_origin(request)[1]
+        mfa_ok = False
+        if remote:
+            stored = db.execute('SELECT mfa_secret, mfa_last_step FROM users WHERE id=?', (user['id'],)).fetchone()
+            if not stored['mfa_secret']:
+                raise HTTPException(403, 'Set up authenticator MFA in Settings from the LAN before remote access')
+            step = totp_step(decrypted_mfa(stored['mfa_secret']), body.totp)
+            if step is None or step <= stored['mfa_last_step']:
+                with LOCK:
+                    FAILED.setdefault(ip, []).append(now)
+                audit('login.mfa', outcome='rejected')
+                raise HTTPException(401, 'Valid 6-digit authenticator code required')
+            db.execute('UPDATE users SET mfa_last_step=? WHERE id=?', (step, user['id']))
+            mfa_ok = True
         token = secrets.token_hex(32)
-        db.execute('INSERT INTO sessions VALUES(?,?,?)', (session_hash(token), user['id'], int(time.time()) + SESSION_TTL))
+        db.execute('INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified) VALUES(?,?,?,?)',
+                   (session_hash(token), user['id'], int(time.time()) + SESSION_TTL, int(mfa_ok)))
     with LOCK:
         FAILED.pop(ip, None)
     response.set_cookie('switchyard_session', token, max_age=SESSION_TTL, httponly=True,
-                        secure=COOKIE_SECURE, samesite='strict', path='/')
+                        secure=browser_origin(request)[0].startswith('https://'), samesite='strict', path='/')
     audit('login')
     return {'ok': True}
 
@@ -234,7 +347,7 @@ def logout(request: Request, response: Response, _=Depends(require_auth)):
     token = request.cookies.get('switchyard_session')
     with dbconn() as db:
         db.execute('DELETE FROM sessions WHERE token_hash=?', (session_hash(token),))
-    response.delete_cookie('switchyard_session', path='/', secure=COOKIE_SECURE, samesite='strict')
+    response.delete_cookie('switchyard_session', path='/', secure=browser_origin(request)[0].startswith('https://'), samesite='strict')
     audit('logout')
     return {'ok': True}
 
@@ -242,6 +355,91 @@ def logout(request: Request, response: Response, _=Depends(require_auth)):
 @app.get('/api/me')
 def me(_=Depends(require_auth)):
     return {'username': 'admin', 'role': 'administrator'}
+
+
+class MfaSetupRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=4096)
+
+
+class MfaCodeRequest(BaseModel):
+    code: str = Field(pattern=r'^[0-9]{6}$')
+
+
+class MfaDisableRequest(MfaCodeRequest):
+    password: str = Field(min_length=1, max_length=4096)
+
+
+def check_admin_password(db, password: str) -> bool:
+    row = db.execute('SELECT password_hash FROM users WHERE id=1').fetchone()
+    try:
+        return HASHER.verify(row['password_hash'], password)
+    except Exception:
+        return False
+
+
+@app.get('/api/mfa/status')
+def mfa_status(_=Depends(require_auth)):
+    with dbconn() as db:
+        enabled = bool(db.execute('SELECT mfa_secret FROM users WHERE id=1').fetchone()['mfa_secret'])
+    return {'enabled': enabled, 'remote_origin': configured_remote_origin()}
+
+
+@app.post('/api/mfa/setup')
+def mfa_setup(body: MfaSetupRequest, request: Request, _=Depends(require_auth)):
+    if browser_origin(request)[1]:
+        raise HTTPException(403, 'Authenticator enrollment is restricted to the LAN')
+    with dbconn() as db:
+        if not check_admin_password(db, body.password):
+            raise HTTPException(403, 'Current password incorrect')
+        if db.execute('SELECT mfa_secret FROM users WHERE id=1').fetchone()['mfa_secret']:
+            raise HTTPException(409, 'Disable existing MFA before re-enrolling')
+        secret = base64.b32encode(secrets.token_bytes(20)).decode('ascii').rstrip('=')
+        db.execute('UPDATE users SET mfa_pending=?, mfa_pending_until=? WHERE id=1',
+                   (mfa_cipher().encrypt(secret.encode()).decode(), int(time.time()) + 600))
+    from urllib.parse import quote
+    issuer = 'Switchyard'
+    uri = f'otpauth://totp/{issuer}:admin?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits=6&period=30'
+    audit('mfa.enrollment.started')
+    return {'secret': secret, 'otpauth_uri': uri, 'expires_seconds': 600}
+
+
+@app.post('/api/mfa/enable')
+def mfa_enable(body: MfaCodeRequest, request: Request, _=Depends(require_auth)):
+    if browser_origin(request)[1]:
+        raise HTTPException(403, 'Authenticator enrollment is restricted to the LAN')
+    with dbconn() as db:
+        row = db.execute('SELECT mfa_pending,mfa_pending_until,mfa_secret FROM users WHERE id=1').fetchone()
+        if row['mfa_secret']:
+            raise HTTPException(409, 'MFA is already enabled')
+        if not row['mfa_pending'] or not row['mfa_pending_until'] or row['mfa_pending_until'] < int(time.time()):
+            raise HTTPException(410, 'Enrollment expired; start again')
+        step = totp_step(decrypted_mfa(row['mfa_pending']), body.code)
+        if step is None:
+            raise HTTPException(401, 'Incorrect authenticator code')
+        db.execute('UPDATE users SET mfa_secret=mfa_pending,mfa_pending=NULL,mfa_pending_until=NULL,mfa_last_step=? WHERE id=1', (step,))
+        # Clear any previously issued sessions; MFA must never be inherited.
+        db.execute('DELETE FROM sessions WHERE token_hash != ?', (session_hash(request.cookies.get('switchyard_session', '')),))
+    audit('mfa.enabled')
+    return {'enabled': True}
+
+
+@app.post('/api/mfa/disable')
+def mfa_disable(body: MfaDisableRequest, request: Request, _=Depends(require_auth)):
+    if browser_origin(request)[1]:
+        raise HTTPException(403, 'Disable MFA only over a LAN session')
+    with dbconn() as db:
+        row = db.execute('SELECT mfa_secret,mfa_last_step FROM users WHERE id=1').fetchone()
+        if not row['mfa_secret']:
+            raise HTTPException(409, 'MFA is not enabled')
+        if not check_admin_password(db, body.password):
+            raise HTTPException(403, 'Current password incorrect')
+        step = totp_step(decrypted_mfa(row['mfa_secret']), body.code)
+        if step is None or step <= row['mfa_last_step']:
+            raise HTTPException(401, 'Valid unused authenticator code required')
+        db.execute('UPDATE users SET mfa_secret=NULL,mfa_pending=NULL,mfa_pending_until=NULL,mfa_last_step=-1 WHERE id=1')
+        db.execute('DELETE FROM sessions WHERE token_hash != ?', (session_hash(request.cookies.get('switchyard_session', '')),))
+    audit('mfa.disabled')
+    return {'enabled': False}
 
 
 class ChangePassword(BaseModel):

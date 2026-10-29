@@ -31,7 +31,11 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
     else { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   }
   const response = await fetch('/api' + path, opts);
-  if (response.status === 401) { setLogin(); throw Error('Authentication required'); }
+  if (response.status === 401) {
+    const data = await response.json().catch(() => ({}));
+    if (path !== '/login') setLogin();
+    throw Error(typeof data.detail === 'string' ? data.detail : 'Authentication required');
+  }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     const detail = typeof data.detail === 'string' ? data.detail : 'Request failed (' + response.status + ')';
@@ -66,6 +70,7 @@ function navigate(page) {
   if (page === 'vault') vaultStatus().catch(showError);
   if (page === 'trust') refreshHosts().catch(showError);
   if (page === 'keys') refreshKeys().catch(showError);
+  if (page === 'settings') refreshMfaStatus().catch(showError);
   if (page === 'activity') refreshAudit().catch(showError);
   if (page === 'terminals' && state.currentTab) requestAnimationFrame(() => state.tabs.get(state.currentTab)?.fit.fit());
 }
@@ -431,7 +436,11 @@ async function refreshAudit(more = false) {
 }
 async function savePrivateDownload(path, filename) {
   const response = await fetch('/api' + path, { credentials: 'same-origin', cache: 'no-store' });
-  if (response.status === 401) { setLogin(); throw Error('Authentication required'); }
+  if (response.status === 401) {
+    const data = await response.json().catch(() => ({}));
+    if (path !== '/login') setLogin();
+    throw Error(typeof data.detail === 'string' ? data.detail : 'Authentication required');
+  }
   if (!response.ok) { const result = await response.json().catch(() => ({})); throw Error(result.detail || 'Download failed (' + response.status + ')'); }
   const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = node('a');
   link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
@@ -1043,11 +1052,21 @@ function bindDesktopUI() {
   window.addEventListener('resize', () => fitDesktop(desktopCurrent()));
 }
 
+async function refreshMfaStatus() {
+  const state = await api('/mfa/status');
+  $('#mfaStatus').textContent = state.enabled
+    ? 'Enabled. Remote HTTPS sign-in requires a 6-digit authenticator code.'
+    : 'Disabled. Remote HTTPS sign-in is blocked until enrollment.';
+  $('#mfaSetupForm').classList.toggle('hidden', state.enabled);
+  $('#mfaDisableForm').classList.toggle('hidden', !state.enabled);
+  if (state.enabled) $('#mfaEnrollment').classList.add('hidden');
+}
+
 function safeAsync(fn) { return event => { Promise.resolve(fn(event)).catch(showError); }; }
 function bind() {
   bindDesktopUI();
   $('#clock').textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value } }); $('#loginPassword').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
+  $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value, totp: $('#loginTotp').value.trim() } }); $('#loginPassword').value = ''; $('#loginTotp').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
   $$('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
   $$('[data-action="new-asset"]').forEach(b => b.addEventListener('click', () => openAsset()));
   $('#logoutBtn').addEventListener('click', safeAsync(async () => { await api('/logout', { method: 'POST' }); setLogin(); }));
@@ -1115,6 +1134,33 @@ function bind() {
   $('#auditMore').addEventListener('click', safeAsync(() => refreshAudit(true)));
   $('#auditExport').addEventListener('click', safeAsync(async () => {
     await savePrivateDownload('/audit/export', 'switchyard-audit.csv'); toast('Audit journal downloaded.');
+  }));
+  $('#mfaSetupForm').addEventListener('submit', safeAsync(async event => {
+    event.preventDefault();
+    const result = await api('/mfa/setup', { method: 'POST', body: {password: $('#mfaSetupPassword').value} });
+    event.target.reset();
+    $('#mfaSecret').textContent = result.secret;
+    $('#mfaUri').setAttribute('href', result.otpauth_uri);
+    $('#mfaEnrollment').classList.remove('hidden');
+    toast('Authenticator enrollment started. Verify a code to enable MFA.');
+  }));
+  $('#mfaEnableForm').addEventListener('submit', safeAsync(async event => {
+    event.preventDefault();
+    await api('/mfa/enable', { method: 'POST', body: {code: $('#mfaEnableCode').value.trim()} });
+    event.target.reset();
+    $('#mfaSecret').textContent = '';
+    $('#mfaUri').removeAttribute('href');
+    $('#mfaEnrollment').classList.add('hidden');
+    await refreshMfaStatus();
+    toast('MFA enabled for external HTTPS sign-in.');
+  }));
+  $('#mfaDisableForm').addEventListener('submit', safeAsync(async event => {
+    event.preventDefault();
+    if (!confirm('Disable remote-access MFA? External logins will be blocked until MFA is enrolled again.')) return;
+    await api('/mfa/disable', { method: 'POST', body: {password: $('#mfaDisablePassword').value, code: $('#mfaDisableCode').value.trim()} });
+    event.target.reset();
+    await refreshMfaStatus();
+    toast('MFA disabled. External sign-in is now blocked.');
   }));
   $('#passwordForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/password', { method: 'POST', body: { current_password: $('#currentPassword').value, new_password: $('#newPassword').value } }); event.target.reset(); toast('Administrator password changed.'); }));
   window.addEventListener('resize', () => { if (state.page === 'terminals' && state.currentTab) state.tabs.get(state.currentTab)?.fit.fit(); });

@@ -32,56 +32,66 @@ For offline deployments, note that the Dockerfile retrieves the Guacamole 1.6.0 
 
 Run the included smoke test against a temporary deployed instance (`scripts/smoke-test.sh`) and test a real RDP, VNC and SPICE server before production use. In particular, a passing API unit test **does not verify video, audio, keyboard, clipboard or hypervisor-console correctness**.
 
-## Install (new deployment)
+## Install on the LAN (default)
 
-Requires Docker Engine with Compose V2, an HTTPS reverse proxy for normal use, and SSH hosts reachable from the container. Docker is used **to deploy Switchyard**; remote Docker workloads are managed through SSH without mapping `/var/run/docker.sock` into Switchyard.
-
-
-### Quick deployment from the Git repository
-
-Clone the repository on a Docker host with the Docker Compose plugin. **Set a real HTTPS `PUBLIC_ORIGIN` before the first run**. The included deployment command never deletes a volume and refuses the placeholder origin.
+Requires Docker Engine, Docker Compose V2, OpenSSL, and reachable target hosts. **No SSH tunnel is required.** Switchyard listens on TCP 9791 on all host interfaces (`SWITCHYARD_BIND=0.0.0.0`) and authenticates LAN users with the administrator username/password. Keep the Docker host firewall restricted to trusted local subnets. **Never directly port-forward TCP/9791 from your router to the Internet.** Docker's published ports can bypass some simple host-firewall rules, so confirm effective firewall behavior with the actual Docker host network configuration.
 
 ```bash
 git clone https://github.com/gigabytegrove/switchyard.git
 cd switchyard
 cp .env.example .env
 chmod 600 .env
-# Edit .env: set PUBLIC_ORIGIN to the actual HTTPS origin, and SWITCHYARD_BIND
-# to the local/trusted reverse-proxy-facing interface.
 ./scripts/deploy.sh
 ./scripts/smoke-test.sh
+cat secrets/admin_password.txt
 ```
 
-For browser-only testing on the Docker host (not remote users), use `PUBLIC_ORIGIN=http://127.0.0.1:9791`, `COOKIE_SECURE=false` and `SWITCHYARD_BIND=127.0.0.1` in `.env`. Do not expose this configuration beyond the trusted local test host. If a reverse proxy runs on another host, bind `SWITCHYARD_BIND` to the Docker host's trusted LAN IP and restrict TCP/9791 by firewall to the proxy. TLS WebSockets must be forwarded for RDP, VNC, and SPICE.
+Browse to `http://DOCKER-HOST-LAN-IP:9791` from another LAN device and sign in as `admin`. Change your password in Settings. The deployment helper generates `secrets/admin_password.txt` and `secrets/mfa_key.txt` if absent, sets permissions to `0600`, and retains both on upgrades. Do not overwrite either secret. The default application listener is `0.0.0.0:9791`; the `guacd` service is *not* published on the host.
 
-`./scripts/deploy.sh` generates `secrets/admin_password.txt` only if absent. It never echoes the secret or overwrites an existing bootstrap password. For an upgrade, use the same Compose project/directory and keep the data volume, `.env`, and `secrets/`. Never use `docker compose down -v`.
+LAN IP addresses in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and local loopback/link-local addresses are accepted automatically. For LAN DNS names, add exact origin(s) to `LAN_ORIGINS`, separated by commas, e.g. `LAN_ORIGINS=http://switchyard.lan:9791,http://ops.home.arpa:9791`. Never list your public Internet domain in `LAN_ORIGINS`.
 
-```bash
-unzip switchyard-v0.4.0-source.zip
-cd switchyard-v0.4.0
-cp .env.example .env
-mkdir -p secrets
-chmod 700 secrets
-openssl rand -base64 36 > secrets/admin_password.txt
-chmod 600 secrets/admin_password.txt
+## HTTPS reverse proxy + mandatory external TOTP
+
+**Enrollment order matters:** First sign in from a trusted LAN address, open **Settings → Two-factor authentication**, enter your administrator password, and generate an authenticator key. Add it to a TOTP-compatible authenticator app, then enter the displayed six-digit code to enable MFA. You must complete enrollment before external sign-in will work. The encrypted TOTP secret is persisted in SQLite, and its encryption key resides separately at `secrets/mfa_key.txt` (include both in a secure backup).
+
+Next set the public HTTPS origin in `.env`:
+
+```dotenv
+SWITCHYARD_BIND=0.0.0.0
+LAN_ORIGINS=
+PUBLIC_ORIGIN=https://ops.example.net
+COOKIE_SECURE=true
 ```
 
-Edit `.env`:
+Set `PUBLIC_ORIGIN` to your *actual* HTTPS hostname, then run `./scripts/deploy.sh` again. **Public-origin logins require username + password + a six-digit TOTP**, even if the browser has a previously created password-only LAN session. The admin login form includes a TOTP field. Sessions authenticated without MFA cannot use APIs, terminal WebSockets or remote desktop sessions through the public origin. All external requests must pass via HTTPS with the original public `Host` header preserved.
 
-- `PUBLIC_ORIGIN` must exactly match the browser-facing URL, e.g. `https://ops.example.net` (no trailing slash).
-- `SWITCHYARD_BIND` is `127.0.0.1` by default. Change it only to the trusted IP reachable by the HTTPS reverse proxy.
-- `COOKIE_SECURE=true` must remain enabled for HTTPS.
-- `ALLOW_HTTP_VAULT=false` should remain disabled; allowing HTTP is only for a trusted isolated environment.
+### Nginx Proxy Manager / nginx
 
-```bash
-docker compose build
-docker compose up -d
-docker compose ps
-docker compose logs --tail=100 switchyard
-curl --fail http://127.0.0.1:9791/healthz
+For NPM, configure a Proxy Host for your configured `PUBLIC_ORIGIN`, forward HTTP to your Docker host's LAN IP on port `9791`, enable **WebSockets Support**, request a valid TLS certificate, enable **Force SSL**, and ensure the incoming `Host` remains the public hostname. NPM must not route arbitrary/unmatched hostnames to Switchyard; this is an authentication boundary. Do not create a router NAT rule exposing `9791` directly.
+
+Equivalent nginx proxy directives (inside its TLS `location /`):
+
+```nginx
+proxy_pass http://192.168.0.35:9791;  # replace with your actual Docker host address
+proxy_http_version 1.1;
+proxy_set_header Host $http_host;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_set_header X-Forwarded-Proto https;
+proxy_read_timeout 3600s;
 ```
 
-To use **local HTTP testing only**, configure `PUBLIC_ORIGIN=http://127.0.0.1:9791` and `COOKIE_SECURE=false` while keeping `SWITCHYARD_BIND=127.0.0.1`. Do not retain this configuration for anything remotely reachable. The first login username is `admin`; the password was generated in `secrets/admin_password.txt`. Change it from Settings, not by replacing the file (which is only used for initial bootstrap).
+The reverse proxy must exclusively serve the exact configured HTTPS hostname and reject unknown `Host` values. Since the LAN port remains accessible, the application is not a substitute for firewall policy. For extra assurance, terminate remote access at a VPN or a separately authenticated proxy rather than forwarding the app's bare TCP port. The backend does not treat client-provided `X-Forwarded-For` as proof of LAN proximity.
+
+### Authentication and MFA behavior
+
+- LAN login: administrator password; TOTP optional. LAN HTTP session cookies are host-only, HttpOnly, SameSite=Strict, and not marked Secure so LAN browsing actually works.
+- Public HTTPS login: administrator password plus time-based six-digit code, with single-use per time step, rate limiting, and Secure/HttpOnly/SameSite=Strict cookies.
+- External access before MFA enrollment: explicitly blocked. MFA setup and disable actions are LAN-only, require the current password; disabling also requires a fresh TOTP code.
+- Public HTTPS host must match `PUBLIC_ORIGIN` exactly, with no alternative public domains; requests from other hostnames are rejected. Remote desktop and terminal WebSockets enforce the same host/origin + MFA-session check.
+- TOTP enrollment and secret encryption key survive restarts. Back up `secrets/mfa_key.txt` securely alongside the persistent data volume. Without that key, the saved MFA enrollment cannot be recovered.
+
+For upgrades, preserve your existing data volume, Compose project name, `.env` and `secrets/` and use `./scripts/deploy.sh`; **never** run `docker compose down -v`.
 
 ## Upgrade from 0.1.0 / 0.2.0
 
