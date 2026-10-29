@@ -20,8 +20,11 @@ check_http() {
 }
 
 check_http /healthz 'health endpoint responds'
-grep -Eq '"version"[[:space:]]*:[[:space:]]*"0\.5\.1-dev\.1"' "$TEMP/response" || {
-  echo 'FAIL: running version is not 0.5.1-dev.3' >&2; exit 1;
+expected_version="$(tr -d '\r\n' < "$(dirname "${BASH_SOURCE[0]}")/../VERSION")"
+[[ "$expected_version" =~ ^[0-9A-Za-z.-]+$ ]] || { echo 'FAIL: invalid VERSION file' >&2; exit 1; }
+expected_regex="${expected_version//./\\.}"
+grep -Eq '"version"[[:space:]]*:[[:space:]]*"'"$expected_regex"'"' "$TEMP/response" || {
+  echo "FAIL: running version does not match $expected_version" >&2; exit 1;
 }
 check_http / 'Switchyard UI responds'
 grep -q 'SWITCHYARD' "$TEMP/response" || { echo 'FAIL: expected UI shell missing' >&2; exit 1; }
