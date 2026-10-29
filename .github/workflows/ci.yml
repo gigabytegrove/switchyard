@@ -40,7 +40,14 @@ jobs:
           printf '%s\n' 'github-actions-disposable-ci-password' > secrets/admin_password.txt
           chmod 644 secrets/admin_password.txt
           printf 'PUBLIC_ORIGIN=http://127.0.0.1:9791\nCOOKIE_SECURE=false\nSWITCHYARD_BIND=127.0.0.1\n' > .env
-          docker compose up -d --no-build --wait --wait-timeout 120
+          docker compose up -d --no-build
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent --max-time 3 http://127.0.0.1:9791/healthz >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --show-error --max-time 6 http://127.0.0.1:9791/healthz
+          test "$(docker inspect --format '{{.State.Running}}' "$(docker compose ps -q guacd)")" = true
+          docker compose ps
           bash scripts/smoke-test.sh
       - name: Capture Compose logs on failure
         if: failure()
