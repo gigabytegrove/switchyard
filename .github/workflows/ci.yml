@@ -24,7 +24,6 @@ jobs:
         run: |
           node --check static/app.js
           node tests/test_client_session_id.cjs
-          node tests/test_client_session_id.cjs
           node --check static/spice-view.js
           bash -n scripts/deploy.sh scripts/smoke-test.sh
           ! grep -Eq 'ADMIN_PASSWORD_FILE|MFA_KEY_FILE|PUBLIC_ORIGIN|LAN_ORIGINS|ALLOW_HTTP_VAULT' compose.yaml
