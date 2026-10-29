@@ -251,3 +251,61 @@ button:disabled {cursor:not-allowed;opacity:.5}
   .sidebar .nav-item {padding:10px 11px;font-size:12px}
   #page-machine,.machine-layout {min-height:calc(100dvh - 113px)}
 }
+
+
+/* v0.5.2-dev.1: Industrial dispatch desk. Permanent folder tree, session canvas.
+   White #fff, light aluminum #eceef2, graphite #202027, signal red #b72237. */
+:root{--wb-rail:276px;--wb-header:55px;--wb-tabs:43px}
+#page-machine,.machine-layout{height:calc(100dvh - 113px);min-height:460px}
+.machine-layout{display:grid;grid-template-columns:var(--wb-rail) minmax(0,1fr);align-items:stretch;overflow:hidden}
+.machine-context{display:flex;flex-direction:column;min-width:0;min-height:0;background:#f9f9fa;border-right:1px solid #c7cad1}
+.workbench-tree-head{height:62px;flex:0 0 62px;padding:12px 13px 10px;display:flex;align-items:center;gap:8px;justify-content:space-between;border-bottom:1px solid #d9dbe1;background:#fff}
+.tree-title{display:flex;flex-direction:column;gap:2px;min-width:0}.tree-title strong{font-size:14px;letter-spacing:-.02em}.tree-title>span{font-size:11px;color:#585d6a}
+.tree-actions{display:flex;gap:4px}.tree-icon-btn{height:32px;min-width:32px;border:1px solid #cbd0d9;background:#fff;color:#303440;font-size:15px;font-weight:750;display:grid;place-items:center;padding:0 7px}.tree-icon-btn:hover{border-color:#b72237;color:#b72237}
+#machineSwitchSearch{margin:11px 12px 9px;width:calc(100% - 24px);height:38px;background:#fff;border:1px solid #bec3ce;font-size:12px;flex:0 0 38px}
+#machineSwitcher{flex:1;min-height:0;max-height:none;overflow-y:auto;overflow-x:hidden;padding:0 8px 12px;display:block;scrollbar-width:thin}
+.tree-group-label{padding:15px 10px 5px;font-size:10px;font-weight:850;letter-spacing:.055em;color:#555b66}
+.tree-folder-line{display:flex;min-width:0;align-items:center;height:34px;margin-top:3px;padding-left:calc(var(--tree-level,0)*12px);gap:2px}
+.tree-folder-toggle{display:block;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;background:none;border:0;padding:8px 5px;color:#333744;font-size:12px;font-weight:750}
+.tree-folder-toggle:hover{color:#b72237}.tree-folder-count{font:11px Consolas,monospace;color:#6c6f7b;padding:0 4px}
+.tree-folder-menu{border:0;background:transparent;color:#666b76;font-size:19px;padding:2px 5px}.tree-folder-menu:hover{color:#b72237}
+.tree-machine{height:49px;display:flex;align-items:center;gap:8px;width:100%;min-width:0;margin:1px 0;padding:4px 7px 4px calc(9px + var(--tree-level,0)*12px);background:transparent;color:#262a36;text-align:left;border:0;border-left:3px solid transparent}
+.tree-machine:hover{background:#edeef1}.tree-machine.active{background:#f8e6e9;border-left-color:#b72237}
+.tree-machine-icon{width:25px;height:26px;display:grid;place-items:center;font-size:14px;color:#b72237;background:#edeef2;flex:0 0 25px}
+.tree-machine.active .tree-machine-icon{background:#b72237;color:#fff}
+.tree-machine-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}.tree-machine-copy strong{font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:750}.tree-machine-copy small{font-size:10px;color:#666b77;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tree-protocols{font:10px Consolas,monospace;color:#787987}
+.tree-foot{border-top:1px solid #d5d7de;padding:11px 15px;font-size:11px;color:#5c616d;background:#fff;display:flex;gap:7px;align-items:center}.tree-foot-dot{background:#16815c;width:7px;height:7px}
+.machine-work-area{min-width:0;min-height:0;background:#fff;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.workbench-command-bar{height:var(--wb-header);flex:0 0 var(--wb-header);display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #d4d7df;padding:0 15px;background:#fff}
+.workbench-machine-identity{display:flex;gap:10px;align-items:center;min-width:0}.workbench-glyph{width:32px;height:32px;display:grid;place-items:center;background:#b72237;color:#fff;flex:0 0 32px}
+.workbench-machine-text{min-width:0}.workbench-machine-text h1{font-size:15px;font-weight:850;margin:0 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.02em}
+.machine-compact-meta{display:flex;align-items:center;gap:3px;font-size:11px;color:#596170;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.machine-compact-meta .mono{font-size:11px}.machine-compact-meta #machineAvailability{font-size:11px;color:#486351}
+.workbench-command-bar .machine-masthead-actions{gap:6px;flex-wrap:nowrap}.workbench-command-bar .machine-masthead-actions button{height:31px;min-height:31px;padding:0 10px;font-size:11px}
+.workbench-session-strip{height:var(--wb-tabs);flex:0 0 var(--wb-tabs);display:flex;align-items:stretch;background:#eceef2;border-bottom:1px solid #bbc0ca;overflow-x:auto;overflow-y:hidden;gap:1px;scrollbar-width:thin}
+.workbench-session-item{display:flex;align-items:stretch;min-width:0;flex:0 0 auto;border-right:1px solid #cdd0d6;background:#e4e6eb}
+.workbench-session-tab{background:#e4e6eb;border:0;border-right:1px solid #cdd0d6;color:#3e4350;font-size:12px;font-weight:700;padding:0 16px;min-width:110px;max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.workbench-session-tab:hover{background:#fff;color:#b72237}.workbench-session-tab.active{background:#fff;color:#b72237;border-bottom:3px solid #b72237}
+.workbench-tab-close{min-width:29px;border:0;background:transparent;color:#5a606b;font-size:18px}.workbench-tab-close:hover{background:#b72237;color:#fff}
+.workbench-stage{padding:0;max-width:none;flex:1;min-height:0;overflow:hidden;position:relative;background:#fff}
+.workbench-stage>.machine-panel{height:100%;min-height:0;max-height:100%;padding:0;animation:none;overflow:auto}
+.workbench-stage>.machine-panel.hidden{display:none!important}
+.workbench-launcher{padding:clamp(24px,4vw,56px)!important;background:#fff}
+.workbench-connection-heading{border-bottom:2px solid #282b34;padding-bottom:18px;margin-bottom:4px}
+.workbench-connection-heading h2{font-size:clamp(20px,2vw,29px);margin:0 0 7px;letter-spacing:-.035em}.workbench-connection-heading p{font-size:13px;color:#646974;margin:0}
+.workbench-connections{max-width:920px}.workbench-connect-row{display:flex;align-items:center;text-align:left;gap:13px;width:100%;background:#fff;border:0;border-bottom:1px solid #e0e2e7;padding:15px 10px;color:#202027}.workbench-connect-row:hover{background:#f4f5f7}
+.workbench-connect-symbol{width:38px;height:36px;flex:0 0 38px;display:grid;place-items:center;background:#eeeef1;color:#b72237;font-weight:850}
+.workbench-connect-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}.workbench-connect-copy strong{font-size:14px}.workbench-connect-copy small{font-size:12px;color:#606571}.workbench-connect-action{color:#b72237;font-size:12px;font-weight:800}
+.workbench-connection-note{font-size:12px;color:#666b75;padding-top:24px;max-width:730px}
+.workbench-welcome{min-height:65%;max-width:600px;margin:5vh auto;display:flex;align-items:flex-start;flex-direction:column;justify-content:center;gap:10px}.workbench-welcome h2{font-size:26px;letter-spacing:-.035em;margin:5px 0}.workbench-welcome p{font-size:14px;color:#5b6170}.workbench-empty-mark{font:700 50px Consolas,monospace;color:#b72237}
+.workbench-terminal .terminal-page{height:100%!important;min-height:0!important;display:flex;flex-direction:column;padding:0!important}.workbench-terminal .terminal-heading{height:43px;min-height:43px;border:0;border-bottom:1px solid #d4d6dc;padding:0 12px;margin:0;background:#fff}.workbench-terminal .terminal-heading h2{font-size:12px;margin:0}.workbench-terminal .terminal-heading p{display:none}.workbench-terminal .terminal-panels{min-height:0!important;flex:1!important;border:0;background:#202027}.workbench-terminal .terminal-tabs{display:none}.workbench-terminal .terminal-hint{display:none}.workbench-terminal .terminal-host{height:100%;padding:10px}.workbench-terminal .terminal-panels>.empty-state{height:100%;min-height:0!important;background:#202027;color:#ecedf3}
+.workbench-desktop{overflow-y:auto!important}.workbench-desktop .desktop-session-heading,.workbench-desktop .heading-row,.workbench-desktop .section-kicker,.workbench-desktop #desktopList,.workbench-desktop .list-controls,.workbench-desktop #desktopGateway,.workbench-desktop #desktopActiveSessions,.workbench-desktop #desktopHistory,.workbench-desktop .desktop-hint,.workbench-desktop #desktopSessionTabs,.workbench-desktop #desktopTotal{display:none!important}
+.workbench-desktop #page-desktops{padding:0!important}.workbench-desktop .desktop-toolbar{min-height:44px;padding:4px 10px;gap:5px;margin:0;border-bottom:1px solid #d1d4dc}.workbench-desktop .desktop-toolbar button{padding:6px 10px;font-size:11px}.workbench-desktop .desktop-viewports{height:calc(100dvh - 300px);min-height:340px;border:0}
+.machine-info-drawer{position:absolute;z-index:6;right:0;top:var(--wb-header);bottom:0;width:min(350px,100%);padding:0;background:#fff;box-shadow:-14px 0 35px #181b2826;border-left:1px solid #d5d8e1;overflow-y:auto}
+.info-drawer-head{display:flex;justify-content:space-between;align-items:center;min-height:53px;border-bottom:1px solid #d5d8e1;padding:10px 17px}.info-drawer-head strong{font-size:15px}.machine-info-contents{padding:17px}.workbench-info-list{margin:0 0 18px}.workbench-info-list>div{display:grid;grid-template-columns:105px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid #e1e3e8;font-size:12px}.workbench-info-list dt{color:#5c616d}.workbench-info-list dd{font-weight:700;overflow-wrap:anywhere;margin:0}.machine-info-contents>button{margin:0 0 9px;width:100%;justify-content:center}
+.wordmark>img{width:clamp(135px,16vw,195px);height:auto;object-fit:contain;display:block}.brand>.brand-emblem{width:38px;height:38px;object-fit:contain;flex:0 0 38px;background:#17171c;padding:2px}.brand strong{font-weight:850;letter-spacing:.02em}
+@media(max-width:1240px){:root{--wb-rail:238px}.workbench-command-bar .machine-masthead-actions button{padding:0 7px}}
+@media(max-width:1000px){:root{--wb-rail:220px}.machine-layout{display:grid;grid-template-columns:var(--wb-rail) minmax(0,1fr)}.machine-context{display:flex;border-right:1px solid #c7cad1;padding:0}.workbench-tree-head{padding:9px}.tree-machine{padding-left:calc(6px + var(--tree-level,0)*9px)}#machineSwitcher{display:block;max-height:none;min-height:0;padding:0 6px 9px}.workbench-command-bar #machineEdit{display:none}}
+@media(max-width:760px){#page-machine,.machine-layout{height:calc(100dvh - 150px);min-height:460px}:root{--wb-rail:195px}.machine-layout{display:grid;grid-template-columns:var(--wb-rail) minmax(0,1fr)}.machine-context{display:flex;border-bottom:0}.workbench-command-bar{padding:0 8px}.workbench-machine-text h1{font-size:13px}.workbench-command-bar #machineInfoToggle,.workbench-command-bar #machineAddDesktop{display:none}.workbench-command-bar #machinePrimaryConnect{padding:0 7px;font-size:10px}.workbench-launcher{padding:20px!important}.workbench-session-tab{max-width:148px;min-width:96px;font-size:11px;padding:0 9px}.workbench-desktop .desktop-viewports{height:55dvh}}
+@media(max-width:520px){:root{--wb-rail:144px}.tree-title strong{font-size:12px}.tree-title>span{font-size:10px}.tree-icon-btn{min-width:26px;height:28px;font-size:12px}.workbench-tree-head{padding:7px 5px}.tree-machine{gap:4px;padding-left:calc(4px + var(--tree-level,0)*6px)}.tree-machine-icon{display:none}.tree-machine-copy strong{font-size:11px}.tree-machine-copy small{font-size:9px}.tree-protocols{display:none}#machineSwitchSearch{margin:7px 5px;width:calc(100% - 10px);padding:0 5px;font-size:11px}.workbench-command-bar #machineInfoToggle,.workbench-command-bar #machineAddDesktop{display:none}.workbench-glyph{display:none}.workbench-command-bar #machinePrimaryConnect{min-width:62px;overflow:hidden}.workbench-launcher{padding:14px!important}.workbench-connect-row{gap:7px;padding:12px 3px}.workbench-connect-symbol{display:none}.workbench-connect-copy strong{font-size:12px}.workbench-connect-copy small{font-size:10px}.workbench-connect-action{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.tree-machine,.workbench-session-tab,.workbench-connect-row{transition:none!important}}

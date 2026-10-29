@@ -1,4 +1,13 @@
-## 0.5.1-dev.3 — machine workspace refinement
+## 0.5.2-dev.1 — two-pane connection manager and official branding
+
+- Replace the large machine profile with a permanent folder tree on the left and connection workspace on the right.
+- Shared SSH/RDP/VNC/SPICE session tab strip, keyboard navigation, close actions, machine selection, and details inspector.
+- Move Files, Docker and Health into global navigation with the selected machine propagated to those workspaces.
+- Integrate the supplied transparent red/silver SwitchYard wordmark, compact symbol and favicon.
+- Preserve existing SQLite records, encrypted credentials and Docker data volume; no external configuration.
+- Add browser-workbench tests; live remote-target interoperability remains to be qualified.
+
+## 0.5.2-dev.1 — machine workspace refinement
 
 - Replaced the nested, duplicate-title machine pages with a contextual two-column console: machine switcher, machine identity, explicit connection actions, and machine-scoped operational tabs.
 - Rebuilt Overview around factual connection inventory, SSH/desktop launch entries, and direct Files/Docker/Health tools. Existing asset folders and desktop records are preserved.
@@ -7,7 +16,7 @@
 - Added separate `static/workspace.css` for this machine workspace, keeping the established white/graphite/signal-red identity; removed the misleading gateway-ready copy from the header.
 - Verified with mocked Chromium flows at desktop and mobile widths, backend tests, and frontend static/JS checks. Live SSH/RDP/VNC/SPICE remains unverified.
 
-## 0.5.1-dev.3 — fix remote connection failures over LAN HTTP
+## 0.5.2-dev.1 — fix remote connection failures over LAN HTTP
 
 - Fix Chromium `crypto.randomUUID is not a function` on private, plain-HTTP LAN origins. Use `crypto.getRandomValues` to produce RFC 4122 version-4 session IDs without downgrading randomness.
 - Apply the correction to SSH terminals, Guacamole RDP/VNC sessions, SPICE sessions, and imported virt-viewer console sessions.

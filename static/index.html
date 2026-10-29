@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#e9e6dc">
   <title>Switchyard · Remote operations</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/xterm.css">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/workspace.css">
@@ -17,7 +18,7 @@
   <div id="toast" role="status" aria-live="polite"></div>
   <main id="setup" class="login-layout hidden" aria-labelledby="setupTitle">
     <section class="login-story">
-      <div class="wordmark"><span class="sigil">S<span>↗</span></span> SWITCHYARD</div>
+      <div class="wordmark"><img src="/static/switchyard-wordmark.webp" alt="SwitchYard" width="210" height="210"></div>
       <h1>Build your<br><em>control room.</em></h1>
       <p>One-time setup lives inside your persistent Switchyard container. No .env files, external secrets, or manual configuration edits.</p>
       <div class="login-bottom">INITIAL CONFIGURATION <span class="edition" id="setupProgress">01 / 03</span></div>
@@ -53,7 +54,7 @@ http://ops.home.arpa:9791"></textarea>
   </main>
   <main id="login" class="login-layout">
     <section class="login-story">
-      <div class="wordmark"><span class="sigil">S<span>↗</span></span> SWITCHYARD</div>
+      <div class="wordmark"><img src="/static/switchyard-wordmark.webp" alt="SwitchYard" width="210" height="210"></div>
       <h1>Every machine.<br><em>One control room.</em></h1>
       <p>A focused place to reach your infrastructure. Your connections, your credentials, your network.</p>
       <div class="login-bottom"><span class="live-dot"></span> Private operations console <span class="edition">01 / 2026</span></div>
@@ -77,10 +78,13 @@ http://ops.home.arpa:9791"></textarea>
   </main>
   <div id="shell" class="shell hidden">
     <aside class="sidebar" aria-label="Primary navigation">
-      <div class="brand"><span class="sigil">S<span>↗</span></span><div><strong>SWITCHYARD</strong><small>OPERATIONS / 0.5</small></div></div>
+      <div class="brand"><img class="brand-emblem" src="/static/switchyard-mark.webp" alt="" width="48" height="48"><div><strong>SWITCHYARD</strong><small>REMOTE OPERATIONS</small></div></div>
       <div class="nav-label">WORKSPACE</div>
       <nav id="navigation">
-        <button data-page="machines" class="nav-item active"><span class="nav-symbol">▤</span> Machines</button>
+        <button data-page="machines" class="nav-item active"><span class="nav-symbol">▤</span> Connections</button>
+        <button data-page="files" class="nav-item"><span class="nav-symbol">⇅</span> Files</button>
+        <button data-page="docker" class="nav-item"><span class="nav-symbol">⬡</span> Docker</button>
+        <button data-page="health" class="nav-item"><span class="nav-symbol">◉</span> Health</button>
         <button data-page="runbooks" class="nav-item"><span class="nav-symbol">⌘</span> Runbooks</button>
         <button data-page="activity" class="nav-item"><span class="nav-symbol">◷</span> Activity</button>
       </nav>
@@ -100,40 +104,42 @@ http://ops.home.arpa:9791"></textarea>
         <div class="machine-toolbar"><label class="sr-only" for="machineSearch">Search machines</label><input id="machineSearch" type="search" placeholder="Find a machine, address, or folder"><label class="sr-only" for="machineEnvironment">Environment</label><select id="machineEnvironment" aria-label="Filter machines by environment"><option value="">All environments</option></select><span id="machineCount" role="status"></span></div>
         <div id="machineDirectory" class="machine-directory" aria-live="polite"></div>
       </section>
-      <section id="page-machine" class="page machine-workspace hidden" aria-labelledby="machineTitle">
+      <section id="page-machine" class="page machine-workspace hidden" aria-label="Connection workspace">
         <div class="machine-layout">
-          <aside class="machine-context" aria-label="Switch machine">
-            <div class="context-heading"><strong>Machine directory</strong><button type="button" id="machineBack" class="context-all" aria-label="View all machines">All machines ↗</button></div>
-            <label class="sr-only" for="machineSwitchSearch">Filter machines</label>
-            <input id="machineSwitchSearch" type="search" placeholder="Find another machine" autocomplete="off" aria-controls="machineSwitcher">
-            <nav id="machineSwitcher" aria-label="Available machines"></nav>
-            <div class="context-foot">Your machines and connections are stored on this appliance.</div>
+          <aside class="machine-context" aria-label="Saved machines and folders">
+            <div class="workbench-tree-head">
+              <div class="tree-title"><strong>Connections</strong><span id="treeMachineCount">0 machines</span></div>
+              <div class="tree-actions"><button id="treeNewFolder" type="button" class="tree-icon-btn" title="Create folder" aria-label="Create folder">▤+</button><button id="treeNewMachine" type="button" class="tree-icon-btn" title="Add machine" aria-label="Add machine">＋</button></div>
+            </div>
+            <label class="sr-only" for="machineSwitchSearch">Search machines and folders</label>
+            <input id="machineSwitchSearch" type="search" placeholder="Search connections" autocomplete="off" aria-controls="machineSwitcher">
+            <nav id="machineSwitcher" class="connection-tree" aria-label="Machine folders and connections"></nav>
+            <div class="tree-foot"><span class="tree-foot-dot" aria-hidden="true"></span>Saved on this server</div>
           </aside>
           <div class="machine-work-area">
-            <header class="machine-masthead">
-              <div class="machine-identification">
-                <div class="machine-emblem" aria-hidden="true">▣</div>
-                <div class="machine-identification-text"><div id="machineFolderLabel" class="machine-context-label">MACHINE / UNFILED</div>
-                <h1 id="machineTitle">Machine</h1><div class="machine-meta"><span id="machineAddress" class="mono"></span><span class="machine-meta-divider" aria-hidden="true"></span><span id="machineAvailability" role="status">Connection details saved</span></div></div>
+            <header class="workbench-command-bar">
+              <div class="workbench-machine-identity"><span class="workbench-glyph" aria-hidden="true">▣</span>
+                <div class="workbench-machine-text"><h1 id="machineTitle">Select a machine</h1>
+                  <div class="machine-compact-meta"><span id="machineAddress" class="mono">Choose a connection on the left</span><span id="machineAvailability" role="status"></span><span id="machineFolderLabel" class="hidden"></span></div></div>
               </div>
-              <div class="machine-masthead-actions"><button type="button" class="action-quiet" id="machineEdit">Edit machine</button><button type="button" class="action-quiet" id="machineAddDesktop">Add desktop</button><button type="button" class="action-primary" id="machinePrimaryConnect">Connect via SSH <span aria-hidden="true">↗</span></button></div>
+              <div class="machine-masthead-actions">
+                <button type="button" class="action-quiet" id="machineInfoToggle" aria-expanded="false" aria-controls="machineInfoDrawer">Details</button>
+                <button type="button" class="action-quiet" id="machineEdit">Edit</button>
+                <button type="button" class="action-quiet" id="machineAddDesktop">+ Desktop</button>
+                <button type="button" class="action-primary" id="machinePrimaryConnect">Connect SSH ↗</button>
+              </div>
             </header>
-            <nav id="machineTabs" class="machine-tabs" aria-label="Machine tools" role="tablist"><span id="desktopCount" class="sr-only"></span><span id="terminalCount" class="sr-only"></span>
-              <button type="button" data-machine-tab="overview" role="tab" aria-controls="machinePanel-overview" aria-selected="true">Overview</button>
-              <button type="button" data-machine-tab="terminals" role="tab" aria-controls="machinePanel-terminals" aria-selected="false">Terminal</button>
-              <button type="button" data-machine-tab="desktops" role="tab" aria-controls="machinePanel-desktops" aria-selected="false">Remote desktop</button>
-              <button type="button" data-machine-tab="files" role="tab" aria-controls="machinePanel-files" aria-selected="false">Files</button>
-              <button type="button" data-machine-tab="docker" role="tab" aria-controls="machinePanel-docker" aria-selected="false">Docker</button>
-              <button type="button" data-machine-tab="health" role="tab" aria-controls="machinePanel-health" aria-selected="false">Health</button>
-            </nav>
-            <div class="machine-content" id="machineContent">
-              <section id="machinePanel-overview" class="machine-panel" role="tabpanel" aria-label="Machine overview"><div id="machineOverviewContent"></div></section>
-              <section id="machinePanel-terminals" class="machine-panel hidden" role="tabpanel" aria-label="Machine terminal"></section>
-              <section id="machinePanel-desktops" class="machine-panel hidden" role="tabpanel" aria-label="Machine remote desktops"></section>
-              <section id="machinePanel-files" class="machine-panel hidden" role="tabpanel" aria-label="Machine files"></section>
-              <section id="machinePanel-docker" class="machine-panel hidden" role="tabpanel" aria-label="Machine Docker"></section>
-              <section id="machinePanel-health" class="machine-panel hidden" role="tabpanel" aria-label="Machine health"></section>
+            <span id="desktopCount" class="sr-only"></span><span id="terminalCount" class="sr-only"></span>
+            <nav id="workbenchSessions" class="workbench-session-strip" aria-label="Open connections" role="tablist"></nav>
+            <div class="workbench-stage" id="machineContent">
+              <section id="machinePanel-overview" class="machine-panel workbench-launcher" aria-label="Available connections"><div id="machineOverviewContent"></div></section>
+              <section id="machinePanel-terminals" class="machine-panel workbench-terminal hidden" aria-label="SSH terminal"></section>
+              <section id="machinePanel-desktops" class="machine-panel workbench-desktop hidden" aria-label="Remote desktop"></section>
             </div>
+            <aside id="machineInfoDrawer" class="machine-info-drawer hidden" aria-label="Machine connection details">
+              <div class="info-drawer-head"><strong>Connection details</strong><button id="machineInfoClose" type="button" class="tree-icon-btn" aria-label="Close details">×</button></div>
+              <div id="machineInfoContents" class="machine-info-contents"></div>
+            </aside>
           </div>
         </div>
       </section>

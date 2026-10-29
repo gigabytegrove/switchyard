@@ -36,9 +36,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image with browser runtime assets
-        run: docker build --pull --label org.opencontainers.image.source=https://github.com/gigabytegrove/switchyard --tag ghcr.io/gigabytegrove/switchyard:0.5.1-dev.3 .
+        run: docker build --pull --label org.opencontainers.image.source=https://github.com/gigabytegrove/switchyard --tag ghcr.io/gigabytegrove/switchyard:0.5.2-dev.1 .
       - name: Check image includes mandatory runtime assets
-        run: docker run --rm --entrypoint /bin/bash ghcr.io/gigabytegrove/switchyard:0.5.1-dev.3 /usr/local/bin/verify-runtime-assets /app/static
+        run: docker run --rm --entrypoint /bin/bash ghcr.io/gigabytegrove/switchyard:0.5.2-dev.1 /usr/local/bin/verify-runtime-assets /app/static
       - name: Start disposable zero-configuration Compose deployment
         run: |
           test ! -e .env
@@ -80,7 +80,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish verified application image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: docker push ghcr.io/gigabytegrove/switchyard:0.5.1-dev.3
+        run: docker push ghcr.io/gigabytegrove/switchyard:0.5.2-dev.1
       - name: Capture Compose logs on failure
         if: failure()
         run: docker compose logs --tail=200 || true

@@ -7,7 +7,7 @@
 Self-hosted machine profiles with SSH, SFTP, Docker, Linux health, and remote desktops (RDP, VNC, SPICE). Optional encrypted stored passwords and Vaultwarden integration.
 
 [![Source tests and Docker build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.5.1--dev.3-B72237)
+![Version](https://img.shields.io/badge/version-0.5.2--dev.1-B72237)
 ![Docker](https://img.shields.io/badge/deployment-Docker-B72237?logo=docker)
 ![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-5934AC)
 ![Status](https://img.shields.io/badge/status-development-orange)
@@ -53,6 +53,14 @@ Navigate to **Settings → Software updates**, configure a previously saved SSH 
 
 **Testing qualification:** Browser controls were exercised in Chromium using mocked API replies and the backend regression suite; an actual Docker host self-update and live SSH/RDP/VNC/SPICE end-to-end session have not been validated in this release.
 
+## Connections workspace — two-column layout
+
+Switchyard opens directly into a connection manager instead of a full-page machine profile. The **left column** is a permanent searchable tree of machines grouped into nested folders. One click selects a host; double-click connects using its first configured protocol. Folder creation, editing and nested organization use the existing persistent database. The **right column** is a compact connection canvas with open SSH/RDP/VNC/SPICE tabs and session-close controls. Machine details appear in an optional narrow inspector rather than consuming a full page.
+
+Files, Docker, Health, Runbooks, Activity, SSH keys, Host trust and Settings live in global navigation. Files, Docker and Health preselect the current SSH machine. The user's supplied red/silver SwitchYard mark is used in the app bar, with the full wordmark on sign-in and a favicon. Existing saved machines, passwords and Docker volumes are unchanged.
+
+**Verification boundary:** The two-pane workbench and session navigation are tested using mocked browser connections; live protocol operation still requires testing against real SSH/RDP/VNC/SPICE hosts.
+
 ## First-run setup
 
 1. **Claim the appliance.** Enter the one-time bootstrap code emitted in the container logs. This code changes each time an unconfigured container restarts and is invalidated after setup. Choose an administrator username and password (14-character minimum). Passwords use Argon2id hashes.
@@ -76,7 +84,7 @@ After first-run completion, use **Settings → Browser and network access** to u
 
 **The `/data` Docker named volume is required for persistence.** Never use `docker compose down -v` during upgrades or normal maintenance. A container/image replacement does not reset settings when the volume is preserved.
 
-## Machine workspace (v0.5.1-dev.3)
+## Machine workspace (v0.5.2-dev.1)
 
 The Machines directory is now the primary navigation destination. The host-first workspace presents a persistent machine switcher and one compact machine header, followed by **Overview, Terminal, Remote desktop, Files, Docker and Health** tabs. These tabs reuse existing SSH, SFTP, Docker, remote desktop and agentless health APIs, preserving machine records and credentials in the Docker volume. Available connection rows open SSH or the matching RDP/VNC/SPICE session directly; the Terminal tab provides a new-session / reconnect action and clear connection states. Non-SSH machines keep their desktop access without misleading file, Docker or health controls.
 
