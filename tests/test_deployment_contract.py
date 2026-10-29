@@ -11,6 +11,7 @@ def test_private_guacamole_network_and_no_privileged_socket():
     assert 'ghcr.io/quenchworks/images/guacd@sha256:caf62c36625a2ffb3adfc2bcc51572ab4e7f5e805ae3b55f3800812eeaf3c411' in compose
     assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.0-dev.2' in compose
     assert not re.search(r'^\s+build:', compose, re.M), 'raw Compose must not require source code'
+    assert not re.search(r'^\s+container_name:', compose, re.M), 'service names must remain scoped to Compose project'
     assert 'remote_access:\n    internal: true' in compose
     assert 'GUACD_HOST:' not in compose
     assert 'environment:' not in compose

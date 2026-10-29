@@ -19,7 +19,6 @@ services:
       - default
       - remote_access
     image: ghcr.io/gigabytegrove/switchyard:0.5.0-dev.2
-    container_name: switchyard
     restart: unless-stopped
     ports:
       - "0.0.0.0:9791:9791"

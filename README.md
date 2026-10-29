@@ -38,6 +38,12 @@ docker compose ps
 
 **Deployment images:** Docker Compose pulls published artifacts from GHCR. The app is built in GitHub Actions; Docker Hub is not required on the deployment host. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
 
+### Existing Docker-panel installations
+
+**Use one Compose project per Switchyard installation.** If you originally deployed through a Docker management panel, update the image and Compose configuration **inside that same panel project**. Do not also launch `docker compose up` from a Git checkout on the same host: both installations would compete for TCP 9791 and, more importantly, would create distinct named Docker volumes. The Git checkout deployment script refuses to start when a different running container already publishes TCP 9791. It does **not** remove or rename an existing container.
+
+If you see `The container name "/switchyard" is already in use`, update to the latest `compose.yaml` (the application no longer declares `container_name:`), identify the existing container's Compose ownership and mounted data volume with `docker inspect`, and retain the original project and volume. Do not remove volumes or use `docker compose down -v`. If another deployment still owns TCP 9791, stop or migrate it **only after identifying and backing up its data**.
+
 ## First-run setup
 
 1. **Claim the appliance.** Enter the one-time bootstrap code emitted in the container logs. This code changes each time an unconfigured container restarts and is invalidated after setup. Choose an administrator username and password (14-character minimum). Passwords use Argon2id hashes.

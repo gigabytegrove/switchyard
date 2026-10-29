@@ -1,5 +1,7 @@
 ## 0.5.0-dev.2
 
+- Fix Compose project collision: remove globally fixed `container_name: switchyard`, which prevented a separate Compose project from creating its own service. The deployment script now refuses to start a second instance when another Docker container publishes TCP 9791; no automatic deletion or volume migration is attempted. Document safe, single-project upgrades from Docker management panels.
+
 - Fixed unintended mandatory remote MFA: HTTPS proxy access works with password alone until MFA is explicitly enrolled. Existing enabled MFA remains enforced.
 - Added QR-code enrollment to Settings, rendered server-side without uploading authenticator secrets to third parties.
 - Replaced forest/tan editorial presentation with a signal-red and graphite horizontal operations workbench; kept data models and workflows unchanged.
