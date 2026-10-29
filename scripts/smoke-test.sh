@@ -48,4 +48,4 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   fi
   echo 'PASS: guacd has no published host port'
 fi
-echo 'PASS: non-destructive Switchyard v0.5.2-dev.1 smoke checks complete'
+echo 'PASS: non-destructive Switchyard v0.5.2-dev.2 smoke checks complete'
