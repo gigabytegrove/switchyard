@@ -1,0 +1,1123 @@
+'use strict';
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const state = { page: 'overview', assets: [], tabs: new Map(), currentTab: null, editing: null, vaultItems: [] };
+let toastTimer;
+let dockerMode = 'containers';
+let activeFileEdit = null;
+let editingRunbookId = null;
+let runbooks = [];
+let auditBefore = null;
+let auditFilter = '';
+
+function toast(message, error = false) {
+  const el = $('#toast'); el.textContent = message; el.className = error ? 'show error' : 'show';
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = '', 4200);
+}
+function node(tag, cls, content) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (content !== undefined) el.textContent = String(content);
+  return el;
+}
+function button(label, cls, handler) {
+  const el = node('button', cls, label); el.type = 'button'; el.addEventListener('click', handler); return el;
+}
+function showError(error) { toast(error?.message || 'The request failed.', true); }
+async function api(path, { method = 'GET', body, headers = {} } = {}) {
+  const opts = { method, credentials: 'same-origin', headers: { ...headers } };
+  if (body !== undefined) {
+    if (body instanceof FormData) opts.body = body;
+    else { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  }
+  const response = await fetch('/api' + path, opts);
+  if (response.status === 401) { setLogin(); throw Error('Authentication required'); }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const detail = typeof data.detail === 'string' ? data.detail : 'Request failed (' + response.status + ')';
+    throw Error(detail);
+  }
+  return response.headers.get('content-type')?.includes('application/json') ? response.json() : response;
+}
+function setLogin() {
+  $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden');
+  for (const tab of state.tabs.values()) tab.ws?.close();
+  state.tabs.clear(); state.currentTab = null; closeAllDesktops();
+}
+async function setShell() {
+  $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
+  await refreshAssets(); navigate('overview');
+}
+async function refreshAssets() {
+  state.assets = await api('/assets'); renderAssets(); renderQuick(); renderFileSelect(); renderDockerSelect(); renderHealthSelect();
+  const info = await api('/overview');
+  $('#metricAssets').textContent = info.assets;
+  $('#metricGroups').textContent = info.environments;
+  $('#metricEvents').textContent = info.audit_events;
+}
+function navigate(page) {
+  state.page = page;
+  $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
+  $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page));
+  $('#bread').textContent = ({ overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
+  if (page === 'desktops') { refreshDesktops().catch(showError); refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); fitDesktop(desktopCurrent()); }
+  if (page === 'runbooks') refreshRunbooks().catch(showError);
+  if (page === 'health') refreshHealthHistory().catch(showError);
+  if (page === 'vault') vaultStatus().catch(showError);
+  if (page === 'trust') refreshHosts().catch(showError);
+  if (page === 'keys') refreshKeys().catch(showError);
+  if (page === 'activity') refreshAudit().catch(showError);
+  if (page === 'terminals' && state.currentTab) requestAnimationFrame(() => state.tabs.get(state.currentTab)?.fit.fit());
+}
+function renderQuick() {
+  const target = $('#quickAssets'); target.replaceChildren();
+  if (!state.assets.length) { target.append(node('div', 'empty-state', 'No saved assets. Add your first SSH connection to begin.')); return; }
+  for (const asset of state.assets.slice(0, 6)) {
+    const el = button('', 'quick-asset', () => connect(asset.id));
+    el.append(node('span', 'env', asset.environment || 'UNASSIGNED'), node('h3', '', asset.label), node('div', 'host', asset.username + '@' + asset.host + ':' + asset.port), node('span', 'arrow', '↗'));
+    target.append(el);
+  }
+}
+function renderAssets() {
+  const query = $('#assetSearch').value.toLowerCase().trim();
+  const assets = state.assets.filter(a => (a.label + ' ' + a.host + ' ' + a.username + ' ' + a.environment).toLowerCase().includes(query));
+  $('#assetTotal').textContent = `${assets.length} of ${state.assets.length} assets`;
+  const target = $('#assetList'); target.replaceChildren();
+  if (!assets.length) { target.append(node('div', 'empty-state', query ? 'Nothing matches your search.' : 'No assets yet. Select New asset to begin.')); return; }
+  for (const a of assets) {
+    const row = node('div', 'asset-row');
+    const name = node('div'); name.append(node('strong', '', a.label), node('small', '', a.username + ' · ' + (a.auth_type === 'vault' ? 'VAULT' : a.auth_type.toUpperCase())));
+    const host = node('div', 'host-column mono', a.host + ':' + a.port);
+    const env = node('div', 'environment-column env-tag', a.environment || '—');
+    const actions = node('div', 'asset-row-actions');
+    actions.append(button('Connect ↗', 'mini-btn', () => connect(a.id)), button('Files', 'mini-btn', () => { navigate('files'); $('#fileAsset').value = a.id; browseFiles(); }), button('Edit', 'mini-btn', () => openAsset(a)), button('Delete', 'mini-btn danger', () => removeAsset(a)));
+    row.append(name, host, env, actions); target.append(row);
+  }
+}
+function openAsset(asset = null) {
+  state.editing = asset?.id || null; const form = $('#assetForm'); form.reset();
+  $('#assetModalTitle').textContent = asset ? 'Edit connection' : 'Add a connection';
+  if (asset) {
+    for (const [key, value] of Object.entries(asset)) {
+      const input = form.elements.namedItem(key);
+      if (!input) continue;
+      if (input.type === 'checkbox') input.checked = !!value;
+      else input.value = value;
+    }
+  }
+  syncAuthFields(); $('#assetDialog').showModal();
+}
+function syncAuthFields() {
+  const auth = $('#assetAuth').value;
+  $('#credentialGroup').classList.toggle('hidden', auth !== 'vault');
+  $('#keyGroup').classList.toggle('hidden', auth !== 'key');
+}
+async function saveAsset(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.target));
+  data.port = Number(data.port); data.use_tmux = event.target.elements.use_tmux.checked;
+  data.credential_ref ||= ''; data.key_file ||= '';
+  const editing = state.editing;
+  await api('/assets' + (editing ? '/' + editing : ''), { method: editing ? 'PUT' : 'POST', body: data });
+  $('#assetDialog').close(); await refreshAssets(); toast(editing ? 'Connection updated.' : 'Connection added.');
+}
+async function removeAsset(asset) {
+  if (!confirm(`Delete ${asset.label}? This removes the saved connection but does not delete remote files.`)) return;
+  await api('/assets/' + asset.id, { method: 'DELETE' }); await refreshAssets(); toast('Connection removed.');
+}
+function promptPassword(asset) {
+  if (asset.auth_type !== 'interactive') return '';
+  const pass = prompt(`SSH password for ${asset.username}@${asset.host}. For SSH key authentication, choose Mounted SSH key on this asset.`);
+  return pass;
+}
+function connect(aid) {
+  const asset = state.assets.find(a => a.id === aid);
+  if (!asset) { toast('Asset was not found.', true); return; }
+  const password = promptPassword(asset);
+  if (password === null) return;
+  if (!window.Terminal || !window.FitAddon) { toast('Terminal assets are missing from the container.', true); return; }
+  const id = crypto.randomUUID();
+  const tab = { id, asset, ws: null, password, terminal: new window.Terminal({ cursorBlink: true, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: 14, lineHeight: 1.25, scrollback: 5000, theme: { background: '#1d2624', foreground: '#e9e6dc', cursor: '#e8a477', selectionBackground: '#527f70' } }), fit: new window.FitAddon.FitAddon() };
+  tab.terminal.loadAddon(tab.fit);
+  state.tabs.set(id, tab); state.currentTab = id;
+  navigate('terminals'); renderTabs();
+  const panel = $('#term-' + id); tab.terminal.open(panel); tab.fit.fit();
+  const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/terminal/' + encodeURIComponent(aid);
+  const ws = new WebSocket(wsUrl); tab.ws = ws;
+  tab.terminal.write('\x1b[38;5;113mSwitchyard · connecting to ' + asset.host + '\x1b[0m\r\n');
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'auth', password: tab.password })); tab.password = null;
+    ws.send(JSON.stringify({ type: 'resize', cols: tab.terminal.cols, rows: tab.terminal.rows }));
+  };
+  ws.onmessage = event => {
+    try { const message = JSON.parse(event.data); if (message.type === 'data') tab.terminal.write(message.data); else if (message.type === 'error') { tab.terminal.writeln('\r\n\x1b[31m' + message.message + '\x1b[0m'); toast(message.message, true); } }
+    catch { tab.terminal.writeln('\r\nUnexpected terminal message.'); }
+  };
+  ws.onerror = () => tab.terminal.writeln('\r\n\x1b[31mConnection error.\x1b[0m');
+  ws.onclose = () => { tab.terminal.writeln('\r\n\x1b[90m[Session disconnected]\x1b[0m'); renderTabs(); };
+  tab.terminal.onData(data => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data })); });
+  tab.terminal.onResize(size => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows })); });
+}
+function renderTabs() {
+  const nav = $('#terminalTabs'); nav.replaceChildren();
+  const panels = $('#terminalPanels');
+  if (!state.tabs.size) panels.replaceChildren(node('div', 'empty-state', 'No terminal sessions open. Select an asset and choose Connect.'));
+  else panels.querySelector(':scope > .empty-state')?.remove();
+  for (const [id, t] of state.tabs) {
+    const wrap = node('div', 'terminal-tab' + (id === state.currentTab ? ' active' : ''));
+    const select = button(t.asset.label + (t.ws?.readyState === WebSocket.CLOSED ? ' · closed' : ''), 'tab-select', () => selectTab(id));
+    select.setAttribute('role', 'tab'); select.setAttribute('aria-selected', String(id === state.currentTab));
+    const close = button('×', 'tab-close', () => closeTab(id)); close.setAttribute('aria-label', 'Close ' + t.asset.label);
+    wrap.append(select, close); nav.append(wrap);
+    if (!$('#term-' + id)) { const panel = node('div', 'terminal-host'); panel.id = 'term-' + id; panels.append(panel); }
+  }
+  $$('.terminal-host', panels).forEach(el => el.classList.toggle('active', el.id === 'term-' + state.currentTab));
+  $('#terminalCount').textContent = state.tabs.size;
+}
+function selectTab(id) { state.currentTab = id; navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
+function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = state.tabs.keys().next().value || null; renderTabs(); if (state.currentTab) selectTab(state.currentTab); }
+function renderFileSelect() {
+  const select = $('#fileAsset'); const selected = select.value; select.replaceChildren(node('option', '', 'Select an asset'));
+  for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; select.append(opt); }
+  if (state.assets.some(a => a.id === selected)) select.value = selected;
+}
+function fileAuth(a) { const pass = promptPassword(a); return pass === null ? null : pass ? { 'X-SSH-Password': pass } : {}; }
+async function browseFiles() {
+  const a = state.assets.find(x => x.id === $('#fileAsset').value);
+  if (!a) { toast('Choose a remote host first.', true); return; }
+  const headers = fileAuth(a); if (headers === null) return;
+  $('#fileList').replaceChildren(node('div', 'empty-state', 'Opening remote directory…'));
+  const data = await api(`/assets/${a.id}/files?path=${encodeURIComponent($('#filePath').value || '.')}`, { headers });
+  $('#filePath').value = data.path; $('#fileLocation').textContent = a.host + ' : ' + data.path;
+  const target = $('#fileList'); target.replaceChildren();
+  if (data.path !== '/') {
+    const parent = node('div', 'file-row');
+    parent.append(button('↰  Parent directory', 'file-name', () => { $('#filePath').value = data.path.split('/').slice(0, -1).join('/') || '/'; browseFiles(); }), node('span'), node('span')); target.append(parent);
+  }
+  if (!data.entries.length) target.append(node('div', 'empty-state', 'This directory is empty.'));
+  for (const entry of data.entries) {
+    const row = node('div', 'file-row'); const fullPath = (data.path === '/' ? '' : data.path) + '/' + entry.name;
+    const name = button((entry.directory ? '▣ ' : '▤ ') + entry.name, 'file-name', () => { if (entry.directory) { $('#filePath').value = fullPath; browseFiles(); } else downloadFile(a, fullPath); });
+    const tools = node('div', 'file-tools');
+    tools.append(node('span', 'file-size', entry.directory ? 'DIR' : sizeLabel(entry.size)),
+      ...(entry.directory ? [] : [button('Edit text', 'mini-btn', () => openFileEditor(a, fullPath))]),
+      button('Rename', 'mini-btn', () => renameRemote(a, fullPath)),
+      button('Delete', 'mini-btn danger', () => deleteRemote(a, fullPath, entry.directory)));
+    row.append(name, tools, node('span', 'file-size', new Date(entry.modified * 1000).toLocaleString())); target.append(row);
+  }
+}
+function sizeLabel(bytes) { if (bytes < 1024) return bytes + ' B'; if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'; return (bytes / (1024 * 1024)).toFixed(1) + ' MB'; }
+async function downloadFile(a, path) {
+  const headers = fileAuth(a); if (headers === null) return;
+  const response = await api(`/assets/${a.id}/download?path=${encodeURIComponent(path)}`, { headers });
+  const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = node('a');
+  link.href = url; link.download = path.split('/').pop() || 'file'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+  toast('File download started.');
+}
+async function uploadFile(event) {
+  const a = state.assets.find(x => x.id === $('#fileAsset').value);
+  if (!a) { toast('Select a remote host first.', true); return; }
+  const file = event.target.files?.[0]; if (!file) return;
+  if (file.size > 64 * 1024 * 1024) { toast('File exceeds 64 MiB limit.', true); return; }
+  const headers = fileAuth(a); if (headers === null) return;
+  const body = new FormData(); body.set('file', file);
+  await api(`/assets/${a.id}/upload?path=${encodeURIComponent($('#filePath').value || '.')}`, { method: 'POST', body, headers });
+  event.target.value = ''; toast('File uploaded; no existing remote file was overwritten.'); await browseFiles();
+}
+async function createRemoteFolder() {
+  const a = state.assets.find(x => x.id === $('#fileAsset').value);
+  if (!a) { toast('Choose a remote host.', true); return; }
+  const name = prompt('New directory name:'); if (!name) return;
+  if (name === '.' || name === '..' || name.includes('/') || name.includes('\\')) { toast('Choose a single directory name.', true); return; }
+  const headers = fileAuth(a); if (headers === null) return;
+  const path = ($('#filePath').value === '/' ? '' : $('#filePath').value) + '/' + name;
+  await api(`/assets/${a.id}/files/mkdir`, { method: 'POST', body: { path }, headers });
+  toast('Remote directory created.'); await browseFiles();
+}
+async function renameRemote(a, path) {
+  const oldName = path.split('/').pop(); const name = prompt('Rename remote item to:', oldName);
+  if (!name || name === oldName) return;
+  if (name === '..' || name === '.' || name.includes('/') || name.includes('\\')) { toast('Enter a single file or directory name.', true); return; }
+  const headers = fileAuth(a); if (headers === null) return;
+  const destination = path.substring(0, path.lastIndexOf('/') + 1) + name;
+  await api(`/assets/${a.id}/files/rename`, { method: 'POST', body: { source: path, destination }, headers });
+  toast('Remote item renamed.'); await browseFiles();
+}
+async function deleteRemote(a, path, directory) {
+  if (!confirm(`Delete remote ${directory ? 'directory' : 'file'} ${path}? This cannot be undone. Directories must be empty.`)) return;
+  const headers = fileAuth(a); if (headers === null) return;
+  await api(`/assets/${a.id}/files?directory=${directory}`, { method: 'DELETE', body: { path }, headers });
+  toast('Remote item deleted.'); await browseFiles();
+}
+function renderDockerSelect() {
+  const el = $('#dockerAsset'); const selected = el.value; el.replaceChildren(node('option', '', 'Select a Docker host'));
+  for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; el.append(opt); }
+  if (state.assets.some(a => a.id === selected)) el.value = selected;
+}
+function detailLine(label, value) {
+  const row = node('div', 'detail-line');
+  row.append(node('strong', '', label), node('span', 'mono', value === null || value === undefined || value === '' ? '—' : String(value)));
+  return row;
+}
+async function refreshDocker() {
+  const a = state.assets.find(x => x.id === $('#dockerAsset').value);
+  if (!a) { toast('Select a Docker host.', true); return; }
+  const headers = fileAuth(a); if (headers === null) return;
+  $('#dockerList').replaceChildren(node('div', 'empty-state', 'Inspecting Docker workloads over SSH…'));
+  $('#dockerDetails').classList.add('hidden');
+  let summary;
+  try {
+    summary = await api(`/assets/${a.id}/docker/summary`, { headers });
+    $('#dockerSummary').textContent = `${summary.name || a.host} · Engine ${summary.server_version || '?'} · ${summary.running ?? '?'} running / ${summary.containers ?? '?'} total · ${summary.images ?? '?'} images · ${summary.cpus ?? '?'} CPUs`;
+  } catch (error) { $('#dockerSummary').textContent = 'Daemon summary unavailable: ' + error.message; }
+  const endpoint = ({containers:'containers', images:'images', networks:'networks', volumes:'volumes', stacks:'stacks'})[dockerMode];
+  const items = await api(`/assets/${a.id}/docker/${endpoint}`, { headers });
+  $('#dockerHostLabel').textContent = a.username + '@' + a.host + ' · ' + items.length + ' ' + endpoint;
+  const target = $('#dockerList'); target.replaceChildren();
+  if (!items.length) target.append(node('div', 'empty-state', 'No ' + endpoint + ' found on this host.'));
+  for (const item of items) {
+    const row = node('div', 'docker-row');
+    const title = dockerMode === 'stacks' ? item.name : dockerMode === 'containers' ? item.name || item.id?.slice(0,12) :
+      dockerMode === 'images' ? (item.repository || '<none>') + ':' + (item.tag || '<none>') : item.name;
+    const meta = dockerMode === 'stacks' ? item.config_files : dockerMode === 'containers' ? item.image + ' · ' + item.id.slice(0, 12) :
+      dockerMode === 'images' ? (item.size || '—') + ' · ' + (item.created || '—') : (item.driver || '—');
+    const left = node('div'); left.append(node('strong', '', title || 'Unnamed'), node('small', '', meta));
+    if (dockerMode === 'stacks') {
+      const actions = node('div', 'asset-row-actions');
+      for (const action of ['start', 'stop', 'restart']) {
+        actions.append(button(action[0].toUpperCase() + action.slice(1), 'mini-btn' + (action === 'stop' ? ' danger' : ''), safeAsync(async () => {
+          if (!confirm(`${action.toUpperCase()} Docker Compose project ${item.name} on ${a.host}?`)) return;
+          const auth = fileAuth(a); if (auth === null) return;
+          await api(`/assets/${a.id}/docker/stacks/action`, {method:'POST', headers:auth, body:{project:item.name, action}});
+          toast('Compose project ' + action + ' completed.'); await refreshDocker();
+        })));
+      }
+      row.append(left, node('span', 'docker-state', item.status), node('span', 'docker-ports', item.config_files), actions);
+      target.append(row); continue;
+    }
+    if (dockerMode !== 'containers') {
+      row.append(left, node('span', 'docker-ports', dockerMode === 'networks' ? item.scope || '—' : dockerMode === 'images' ? (item.id || '').slice(0, 18) : 'Persisted volume'));
+      target.append(row); continue;
+    }
+    const status = node('span', 'docker-state' + (/^up\b/i.test(item.status) ? ' running' : ''), item.status || item.state);
+    const ports = node('span', 'docker-ports', item.ports || 'No published ports');
+    const actions = node('div', 'asset-row-actions');
+    actions.append(button('Inspect', 'mini-btn', () => showDockerDetails(a, item.id)));
+    for (const action of ['start', 'stop', 'restart']) {
+      const b = button(action[0].toUpperCase() + action.slice(1), 'mini-btn' + (action === 'stop' ? ' danger' : ''), async () => {
+        if (!confirm(`${action.toUpperCase()} container ${item.name || item.id.slice(0, 12)} on ${a.host}?`)) return;
+        const auth = fileAuth(a); if (auth === null) return;
+        try { await api(`/assets/${a.id}/docker/action`, { method: 'POST', headers: auth, body: { action, container_id: item.id } }); toast('Docker ' + action + ' completed.'); await refreshDocker(); } catch (error) { showError(error); }
+      });
+      b.disabled = !/^[0-9a-f]{12,64}$/i.test(item.id) || (action === 'start' && /^up\b/i.test(item.status)) || (action === 'stop' && !/^up\b/i.test(item.status));
+      actions.append(b);
+    }
+    row.append(left, status, ports, actions); target.append(row);
+  }
+}
+async function showDockerDetails(asset, id) {
+  const headers = fileAuth(asset); if (headers === null) return;
+  const pane = $('#dockerDetails'); const content = $('#dockerDetailContent');
+  pane.classList.remove('hidden'); content.replaceChildren(node('div', 'empty-state', 'Loading container inspection…'));
+  $('#dockerDetailTitle').textContent = 'Inspecting ' + id.slice(0, 12);
+  try {
+    const [item, stats] = await Promise.all([
+      api(`/assets/${asset.id}/docker/containers/${id}/inspect`, { headers }),
+      api(`/assets/${asset.id}/docker/containers/${id}/stats`, { headers }).catch(error => ({error: error.message}))
+    ]);
+    $('#dockerDetailTitle').textContent = item.name || id.slice(0, 12);
+    content.replaceChildren();
+    for (const [key, value] of Object.entries({
+      'Image':item.image, 'State':item.status, 'Health':item.health, 'Created':item.created,
+      'Started':item.started_at, 'Restarts':item.restart_count, 'Exit code':item.exit_code,
+      'Restart policy':item.restart_policy, 'Networks':item.networks?.join(', '),
+      'CPU':stats.CPUPerc, 'Memory':stats.MemUsage, 'Network I/O':stats.NetIO,
+      'Block I/O':stats.BlockIO, 'PIDs':stats.PIDs,
+      'Metrics':stats.error
+    })) { if (value !== null && value !== undefined && value !== '') content.append(detailLine(key, value)); }
+    const controls = node('div', 'file-controls');
+    const tailLabel = node('label', '', 'Log tail');
+    const tail = node('select');
+    for (const n of [50, 200, 500]) { const opt = node('option', '', n + ' lines'); opt.value = n; if (n === 200) opt.selected = true; tail.append(opt); }
+    tailLabel.append(tail);
+    const output = node('pre', 'log-console', 'Load logs to inspect recent output.');
+    controls.append(tailLabel, button('Load logs', 'action-small', async () => {
+      const auth = fileAuth(asset); if (auth === null) return;
+      output.textContent = 'Loading recent container logs…';
+      try {
+        const result = await api(`/assets/${asset.id}/docker/containers/${id}/logs?tail=${tail.value}`, { headers: auth });
+        output.textContent = result.logs || 'No log output for this container.';
+      } catch (error) { output.textContent = 'Log retrieval failed: ' + error.message; }
+    }));
+    content.append(controls, output);
+    pane.scrollIntoView({block:'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+  } catch (error) { content.replaceChildren(node('div', 'empty-state', error.message)); }
+}
+function dockerView(mode) { dockerMode = mode; refreshDocker().catch(showError); }
+async function vaultStatus() {
+  const status = await api('/vault/status');
+  $('#vaultState').textContent = status.unlocked ? 'Unlocked' : (status.status || 'Unavailable');
+  $('#vaultServer').textContent = status.server || 'No server configured';
+}
+async function vaultItems() {
+  const items = await api('/vault/items'); state.vaultItems = items;
+  const options = $('#availableVaultItems'); options.replaceChildren();
+  for (const item of items) { const opt = node('option', '', item.name || 'Unnamed login'); opt.value = item.id; options.append(opt); }
+  const target = $('#vaultItems'); target.replaceChildren();
+  if (!items.length) target.append(node('div', 'empty-state', 'No login credentials found.'));
+  for (const item of items) {
+    const row = node('div', 'asset-row'); const heading = node('div'); heading.append(node('strong', '', item.name || 'Unnamed login'), node('small', '', item.username || 'No username'));
+    row.append(heading, node('span', 'mono', item.id), node('span'), button('Copy item ID', 'mini-btn', () => { navigator.clipboard.writeText(item.id).then(() => toast('Item ID copied.')).catch(showError); }));
+    target.append(row);
+  }
+}
+async function refreshHosts() {
+  const hosts = await api('/hosts'); const target = $('#trustedList'); target.replaceChildren();
+  if (!hosts.length) target.append(node('div', 'empty-state', 'No trusted host keys. Verify a server fingerprint before first access.'));
+  for (const host of hosts) {
+    const row = node('div', 'asset-row'); row.append(node('strong', '', host.host), node('span', 'mono', host.algorithm), node('span', 'mono', host.fingerprint),
+      button('Revoke', 'mini-btn danger', safeAsync(async () => {
+        if (!confirm(`Revoke trusted fingerprint ${host.fingerprint} for ${host.host}? Connections using it will fail until another fingerprint is verified.`)) return;
+        await api('/hosts/revoke', { method: 'POST', body: host }); toast('Host trust revoked.'); await refreshHosts();
+      }))); target.append(row);
+  }
+}
+let scannedHost = null;
+async function scanHost(event) {
+  event.preventDefault(); const data = { host: $('#scanHost').value.trim(), port: Number($('#scanPort').value) };
+  const key = await api('/hosts/discover', { method: 'POST', body: data }); scannedHost = key;
+  const target = $('#scanResult'); target.classList.remove('hidden'); target.replaceChildren();
+  target.append(node('strong', '', 'UNVERIFIED REMOTE KEY · ' + key.host + ':' + key.port), node('code', '', key.fingerprint), node('p', '', 'Compare this fingerprint against a trusted out-of-band source (server console, administrator, or known-good inventory). Do not approve an unexpected fingerprint.'));
+  target.append(button('I verified this fingerprint — trust host', 'action-primary', async () => {
+    if (!confirm('Have you independently verified ' + key.fingerprint + ' for ' + key.host + '?')) return;
+    await api('/hosts/trust', { method: 'POST', body: { host: key.host, port: key.port, key_type: key.key_type, public_key: key.public_key } });
+    target.classList.add('hidden'); scannedHost = null; toast('Host key saved.'); refreshHosts().catch(showError);
+  }));
+}
+async function refreshKeys() {
+  const items = await api('/keys'); const target = $('#keysList'); target.replaceChildren();
+  $('#keyCount').textContent = items.length + ' keys';
+  if (!items.length) target.append(node('div', 'empty-state', 'No SSH keys stored. Generate Ed25519 or import an existing private key.'));
+  for (const item of items) {
+    const row = node('div', 'key-row');
+    const left = node('div'); left.append(node('strong', '', item.name), node('small', '', item.used_by + ' assigned assets'));
+    const pub = node('code', 'key-public', item.public_key);
+    const actions = node('div', 'asset-row-actions');
+    actions.append(button('Copy public key', 'mini-btn', safeAsync(async () => {
+      await navigator.clipboard.writeText(item.public_key); toast('Public key copied.');
+    })));
+    const remove = button('Delete', 'mini-btn danger', safeAsync(async () => {
+      if (!confirm(`Permanently delete private key ${item.name}? This cannot be undone.`)) return;
+      await api(`/keys/${encodeURIComponent(item.name)}`, { method: 'DELETE' }); await refreshKeys(); toast('SSH key deleted.');
+    }));
+    remove.disabled = item.used_by > 0;
+    actions.append(remove); row.append(left, pub, actions); target.append(row);
+  }
+}
+async function refreshAudit(more = false) {
+  if (!more) auditBefore = null;
+  const query = new URLSearchParams({limit: '100'});
+  if (auditFilter) query.set('action', auditFilter);
+  if (auditBefore !== null) query.set('before', String(auditBefore));
+  const entries = await api('/audit?' + query);
+  const target = $('#auditList'); if (!more) target.replaceChildren();
+  if (!entries.length && !more) target.append(node('div', 'empty-state', 'No audit events match this filter.'));
+  for (const entry of entries) {
+    const row = node('div', 'asset-row'); const a = node('div'); a.append(node('strong', '', entry.action), node('small', '', new Date(entry.at * 1000).toLocaleString()));
+    row.append(a, node('div', 'mono', entry.actor), node('div', '', entry.target || '—'), node('span', entry.outcome === 'ok' ? '' : 'status-bad', entry.outcome)); target.append(row);
+  }
+  if (entries.length) auditBefore = entries.at(-1).id;
+  $('#auditMore').disabled = entries.length < 100;
+}
+async function savePrivateDownload(path, filename) {
+  const response = await fetch('/api' + path, { credentials: 'same-origin', cache: 'no-store' });
+  if (response.status === 401) { setLogin(); throw Error('Authentication required'); }
+  if (!response.ok) { const result = await response.json().catch(() => ({})); throw Error(result.detail || 'Download failed (' + response.status + ')'); }
+  const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = node('a');
+  link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+function renderHealthSelect() {
+  const el = $('#healthAsset'); const selected = el.value;
+  el.replaceChildren(node('option', '', 'Select a Linux host'));
+  for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; el.append(opt); }
+  if (state.assets.some(a => a.id === selected)) el.value = selected;
+}
+function durationLabel(seconds) {
+  const d = Math.floor(seconds / 86400); const h = Math.floor(seconds % 86400 / 3600);
+  return `${d}d ${h}h`;
+}
+function bytesLabel(size) {
+  if (!Number.isFinite(size) || size < 0) return '—';
+  return (size / 1073741824).toFixed(1) + ' GiB';
+}
+async function refreshHealthHistory() {
+  const a = state.assets.find(a => a.id === $('#healthAsset').value);
+  const target = $('#healthHistory'); target.replaceChildren();
+  if (!a) { target.append(node('div', 'empty-state', 'Select a Linux host to view recent observations.')); return; }
+  const rows = await api(`/assets/${a.id}/health/history?limit=50`);
+  if (!rows.length) { target.append(node('div', 'empty-state', 'No health checks recorded. Select Check health to take one.')); return; }
+  for (const item of rows) {
+    const row = node('div', 'health-history-row');
+    const status = node('strong', item.status === 'online' ? 'status-good' : 'status-bad', item.status);
+    row.append(node('span', 'mono', new Date(item.at * 1000).toLocaleString()), status,
+      node('span', 'mono', item.status === 'online' ? `Load ${item.load1} · Free RAM ${bytesLabel(item.memory_available)}` : 'SSH check failed'));
+    target.append(row);
+  }
+}
+async function checkHealth() {
+  const a = state.assets.find(a => a.id === $('#healthAsset').value);
+  if (!a) { toast('Select a Linux host first.', true); return; }
+  const headers = fileAuth(a); if (headers === null) return;
+  $('#healthRefresh').disabled = true; $('#healthStatus').textContent = 'Checking Linux host over SSH…';
+  try {
+    const data = await api(`/assets/${a.id}/health`, { headers });
+    $('#healthStatus').textContent = `${data.hostname} · ${data.kernel} · Last checked ${new Date(data.at * 1000).toLocaleString()}`;
+    const target = $('#healthMetrics'); target.replaceChildren();
+    for (const [label, value, detail] of [
+      ['Uptime', durationLabel(data.uptime_seconds), 'Since last boot'],
+      ['Load average', [data.load1, data.load5, data.load15].join(' / '), '1 / 5 / 15 minutes'],
+      ['Available memory', bytesLabel(data.memory_available), `of ${bytesLabel(data.memory_total)} total`],
+      ['Root disk used', bytesLabel(data.disk_used), `of ${bytesLabel(data.disk_total)} total`]]) {
+      const item = node('div', 'health-metric'); item.append(node('small', '', label), node('strong', '', value), node('span', '', detail)); target.append(item);
+    }
+  } catch (error) { $('#healthStatus').textContent = 'Health check failed: ' + error.message; showError(error); }
+  finally { $('#healthRefresh').disabled = false; await refreshHealthHistory(); }
+}
+async function openFileEditor(asset, path) {
+  const headers = fileAuth(asset); if (headers === null) return;
+  const dialog = $('#fileEditorDialog');
+  $('#fileEditorTitle').textContent = 'Opening text file';
+  $('#fileEditorPath').textContent = asset.label + ' · ' + path;
+  $('#fileEditorContent').value = ''; $('#saveFileEdit').disabled = true;
+  dialog.showModal();
+  try {
+    const result = await api(`/assets/${asset.id}/files/edit?path=${encodeURIComponent(path)}`, {headers});
+    activeFileEdit = {aid:asset.id, path, sha256:result.sha256, asset};
+    $('#fileEditorTitle').textContent = 'Edit ' + path.split('/').pop();
+    $('#fileEditorContent').value = result.content;
+    $('#saveFileEdit').disabled = false;
+  } catch (error) { activeFileEdit = null; dialog.close(); showError(error); }
+}
+async function saveFileEditor(event) {
+  event.preventDefault();
+  if (!activeFileEdit) return;
+  const data = activeFileEdit;
+  if (!confirm('Save changes to ' + data.path + ' on ' + data.asset.host + '? This replaces the remote file.')) return;
+  const headers = fileAuth(data.asset); if (headers === null) return;
+  $('#saveFileEdit').disabled = true;
+  try {
+    const result = await api(`/assets/${data.aid}/files/edit`, {method:'PUT', headers,
+      body:{path:data.path, content:$('#fileEditorContent').value, original_sha256:data.sha256}});
+    data.sha256 = result.sha256;
+    $('#fileEditorDialog').close(); toast('Remote text saved atomically.');
+    await browseFiles();
+  } catch (error) { showError(error); }
+  finally { $('#saveFileEdit').disabled = false; }
+}
+function resetRunbookForm() {
+  editingRunbookId = null;
+  $('#runbookForm').reset(); $('#runbookFormTitle').textContent = 'Create a runbook';
+  $('#runbookConfirm').checked = true;
+}
+async function saveRunbook(event) {
+  event.preventDefault();
+  const body = {name:$('#runbookName').value, description:$('#runbookDescription').value,
+    command:$('#runbookCommand').value, requires_confirmation:$('#runbookConfirm').checked};
+  const id = editingRunbookId;
+  await api('/runbooks' + (id ? '/' + id : ''), {method: id ? 'PUT' : 'POST', body});
+  resetRunbookForm(); await refreshRunbooks(); toast(id ? 'Runbook updated.' : 'Runbook created.');
+}
+function editRunbook(item) {
+  editingRunbookId = item.id; $('#runbookFormTitle').textContent = 'Edit ' + item.name;
+  $('#runbookName').value = item.name; $('#runbookDescription').value = item.description;
+  $('#runbookCommand').value = item.command; $('#runbookConfirm').checked = !!item.requires_confirmation;
+  $('#runbookForm').scrollIntoView({behavior:'auto', block:'start'});
+}
+async function executeRunbook(item, select) {
+  const asset = state.assets.find(a => a.id === select.value);
+  if (!asset) { toast('Choose a target asset.', true); return; }
+  if (item.requires_confirmation && !confirm(`Run “${item.name}” on ${asset.label} (${asset.host})?\n\n${item.command}`)) return;
+  const headers = fileAuth(asset); if (headers === null) return;
+  $('#runbookOutput').textContent = 'Executing on ' + asset.host + '…';
+  try {
+    const result = await api(`/runbooks/${item.id}/execute`, {method:'POST', headers, body:{asset_id:asset.id, confirm:true}});
+    $('#runbookResultMeta').textContent = `${item.name} · ${asset.label} · exit ${result.exit_code}`;
+    $('#runbookOutput').textContent = `Exit ${result.exit_code}\n\n${result.stdout || '(no stdout)'}${result.stderr ? '\n\nSTDERR:\n' + result.stderr : ''}`;
+    toast(result.exit_code === 0 ? 'Runbook completed.' : 'Command exited with code ' + result.exit_code, result.exit_code !== 0);
+  } catch (error) { $('#runbookOutput').textContent = 'Runbook failed: ' + error.message; showError(error); }
+  await refreshRunbookHistory();
+}
+async function refreshRunbookHistory() {
+  const target = $('#runbookHistory'); target.replaceChildren();
+  const rows = await api('/runbooks/history?limit=50');
+  if (!rows.length) { target.append(node('div', 'empty-state', 'No commands have been executed yet.')); return; }
+  for (const item of rows) {
+    const row = node('div', 'health-history-row');
+    row.append(node('span', 'mono', new Date(item.started_at * 1000).toLocaleString()),
+      node('strong', '', item.runbook_name), node('span', '', `${item.asset_name} · ${item.outcome} · ${item.duration_ms} ms`));
+    target.append(row);
+  }
+}
+async function refreshRunbooks() {
+  runbooks = await api('/runbooks');
+  const target = $('#runbookList'); target.replaceChildren();
+  if (!runbooks.length) target.append(node('div', 'empty-state', 'No procedures saved. Add a runbook to create one.'));
+  for (const item of runbooks) {
+    const row = node('div', 'runbook-row'); const info = node('div');
+    info.append(node('strong', '', item.name), node('small', '', item.description || 'No description'));
+    const select = node('select'); select.setAttribute('aria-label', 'Execution target for ' + item.name);
+    select.append(node('option', '', 'Choose host'));
+    for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; select.append(opt); }
+    const controls = node('div', 'file-tools');
+    controls.append(button('Run', 'mini-btn', safeAsync(() => executeRunbook(item, select))),
+      button('Edit', 'mini-btn', () => editRunbook(item)),
+      button('Delete', 'mini-btn danger', safeAsync(async () => {
+        if (!confirm('Delete runbook ' + item.name + '? Execution history will be retained.')) return;
+        await api('/runbooks/' + item.id, {method:'DELETE'});
+        if (editingRunbookId === item.id) resetRunbookForm();
+        await refreshRunbooks(); toast('Runbook deleted.');
+      })));
+    row.append(info, select, controls); target.append(row);
+  }
+  await refreshRunbookHistory();
+}
+
+/* Switchyard remote desktops: persistent inventory and ephemeral browser sessions. */
+let desktopRecords = [];
+let desktopEditing = null;
+let desktopTabs = new Map();
+let currentDesktopTab = null;
+
+function desktopAuthChange() {
+  $('#desktopVaultGroup').classList.toggle('hidden', $('#desktopAuth').value !== 'vault');
+}
+function desktopProtocolChange() {
+  const protocol = $('#desktopProtocol').value;
+  const rdp = protocol === 'rdp', spice = protocol === 'spice';
+  $$('.desktop-rdp-only', $('#desktopDialog')).forEach(el => el.classList.toggle('hidden', !rdp));
+  $$('.desktop-spice-only', $('#desktopDialog')).forEach(el => el.classList.toggle('hidden', !spice));
+  const readOnly = $('#desktopForm').elements.read_only;
+  readOnly.disabled = spice;
+  if (spice) readOnly.checked = false;
+  const port = $('#desktopPort');
+  if (['3389', '5900', '5901', ''].includes(port.value)) port.value = rdp ? '3389' : (spice ? '5901' : '5900');
+  if (!rdp) {
+    $('#desktopForm').elements.domain.value = '';
+    $('#desktopForm').elements.security.value = 'nla';
+    $('#desktopForm').elements.ignore_cert.checked = false;
+  }
+}
+function openDesktopEditor(record = null) {
+  desktopEditing = record?.id || null;
+  const form = $('#desktopForm'); form.reset();
+  if (record) {
+    Object.entries(record).forEach(([key, value]) => {
+      const field = form.elements.namedItem(key);
+      if (!field) return;
+      if (field.type === 'checkbox') field.checked = !!value;
+      else field.value = value;
+    });
+  }
+  $('#desktopModalTitle').textContent = record ? 'Edit desktop' : 'Add a desktop';
+  desktopAuthChange(); desktopProtocolChange(); $('#desktopDialog').showModal();
+}
+async function saveDesktop(event) {
+  event.preventDefault();
+  const submit = $('#desktopSave'); submit.disabled = true;
+  try {
+    const form = $('#desktopForm');
+    const data = Object.fromEntries(new FormData(form));
+    for (const field of ['port', 'width', 'height', 'dpi']) data[field] = Number(data[field]);
+    data.ignore_cert = form.elements.ignore_cert.checked && data.protocol === 'rdp';
+    data.spice_tls = form.elements.spice_tls.checked && data.protocol === 'spice';
+    data.read_only = form.elements.read_only.checked && data.protocol !== 'spice';
+    data.credential_ref ||= '';
+    data.favorite = desktopEditing ? !!desktopRecords.find(item => item.id === desktopEditing)?.favorite : false;
+    if (data.protocol !== 'rdp') { data.domain = ''; data.security = 'nla'; data.ignore_cert = false; }
+    await api('/desktops' + (desktopEditing ? '/' + desktopEditing : ''), {
+      method: desktopEditing ? 'PUT' : 'POST', body: data,
+    });
+    $('#desktopDialog').close(); await refreshDesktops();
+    toast(desktopEditing ? 'Desktop updated.' : 'Desktop saved.');
+  } finally { submit.disabled = false; }
+}
+async function deleteDesktop(record) {
+  if (!confirm(`Delete saved ${record.protocol.toUpperCase()} connection “${record.label}”? The remote computer will not be modified.`)) return;
+  await api('/desktops/' + record.id, { method: 'DELETE' });
+  await refreshDesktops(); toast('Saved desktop removed.');
+}
+function renderDesktopList() {
+  const query = $('#desktopSearch').value.toLowerCase().trim();
+  const visible = desktopRecords.filter(x => [x.label, x.host, x.username, x.environment, x.protocol].join(' ').toLowerCase().includes(query));
+  $('#desktopTotal').textContent = `${visible.length} of ${desktopRecords.length} desktops`;
+  $('#desktopCount').textContent = desktopRecords.length;
+  const target = $('#desktopList'); target.replaceChildren();
+  if (!visible.length) {
+    target.append(node('div', 'empty-state', query ? 'No matching desktop connections.' : 'No desktops saved. Choose Add desktop to configure RDP, VNC or SPICE.'));
+    return;
+  }
+  for (const d of visible) {
+    const row = node('div', 'asset-row desktop-row');
+    const name = node('div'); name.append(node('strong', '', d.label), node('small', '', d.protocol.toUpperCase() + ' · ' + (d.username || 'No username') + ' · ' + (d.auth_type === 'vault' ? 'Vaultwarden' : d.auth_type)));
+    const address = node('div', 'host-column mono', `${d.host}:${d.port}`);
+    const env = node('div', 'environment-column env-tag', d.environment || '—');
+    const actions = node('div', 'asset-row-actions');
+    const favoriteButton = button(d.favorite ? '★ Favorite' : '☆ Favorite', 'mini-btn', async () => {
+      favoriteButton.disabled = true;
+      try {
+        await api(`/desktops/${d.id}`, {method:'PUT', body:{...d, favorite:!d.favorite}});
+        await refreshDesktops();
+        toast(d.favorite ? 'Removed from favorites.' : 'Added to favorites.');
+      } catch (error) { favoriteButton.disabled = false; showError(error); }
+    });
+    favoriteButton.setAttribute('aria-pressed', String(!!d.favorite));
+    favoriteButton.setAttribute('aria-label', (d.favorite ? 'Unfavorite ' : 'Favorite ') + d.label);
+    actions.append(favoriteButton, button('Open desktop ↗', 'mini-btn', () => openDesktop(d).catch(showError)),
+      button('Check port', 'mini-btn', async function () {
+        this.disabled = true; const previous = this.textContent; this.textContent = 'Checking…';
+        try {
+          const result = await api(`/desktops/${d.id}/probe`, {method:'POST', body:{}});
+          this.textContent = result.reachable ? `Reachable · ${result.elapsed_ms} ms` : 'Unreachable';
+          this.title = result.message;
+          toast(`${d.label}: ${result.message}`, !result.reachable);
+        } catch (err) { this.textContent = previous; showError(err); }
+        finally { this.disabled = false; }
+      }),
+      button('Duplicate', 'mini-btn', async function () {
+        this.disabled = true;
+        try {
+          const copy = await api(`/desktops/${d.id}/duplicate`, {method:'POST', body:{}});
+          await refreshDesktops();
+          toast(`Created “${copy.label}”.`);
+          openDesktopEditor(copy);
+        } catch (error) { this.disabled = false; showError(error); }
+      }),
+      button('Edit', 'mini-btn', () => openDesktopEditor(d)),
+      button('Delete', 'mini-btn danger', () => deleteDesktop(d).catch(showError)));
+    row.append(name, address, env, actions); target.append(row);
+  }
+}
+async function refreshDesktopGateway() {
+  const target = $('#desktopGateway');
+  target.textContent = 'Checking private RDP/VNC gateway…';
+  target.classList.remove('desktop-gateway-error');
+  try {
+    const result = await api('/desktops/gateway/status');
+    target.textContent = result.ready
+      ? 'RDP / VNC gateway: available · private Docker network'
+      : 'RDP / VNC gateway: unavailable · inspect guacd service';
+    target.classList.toggle('desktop-gateway-error', !result.ready);
+  } catch (error) {
+    target.textContent = 'RDP / VNC gateway: status unavailable';
+    target.classList.add('desktop-gateway-error');
+  }
+}
+async function refreshDesktops() {
+  await refreshDesktopGateway();
+  desktopRecords = await api('/desktops'); renderDesktopList();
+}
+async function refreshDesktopActive() {
+  const sessions = await api('/desktops/sessions/active');
+  const target = $('#desktopActiveSessions'); target.replaceChildren();
+  if (!sessions.length) {
+    target.append(node('div','empty-state','No server-side remote desktop sessions.'));
+    return;
+  }
+  for (const session of sessions) {
+    const row = node('div','asset-row desktop-history-row');
+    const title = node('div'); title.append(
+      node('strong','', session.label || 'Remote desktop'),
+      node('small','', session.protocol.toUpperCase() + ' · Active connection'));
+    const started = node('div','mono',new Date(session.started_at*1000).toLocaleString());
+    const disconnect = button('Disconnect session','mini-btn danger',async function () {
+      if (!confirm(`Disconnect “${session.label}” from the remote desktop now?`)) return;
+      this.disabled = true;
+      try {
+        await api(`/desktops/sessions/${session.id}/disconnect`,{method:'POST',body:{}});
+        await refreshDesktopActive(); toast('Remote session disconnected.');
+      } catch (error) { this.disabled=false; showError(error); }
+    });
+    row.append(title, started, disconnect); target.append(row);
+  }
+}
+async function refreshDesktopHistory() {
+  const params = new URLSearchParams({limit:'50'});
+  const protocol = $('#desktopHistoryProtocol').value;
+  const outcome = $('#desktopHistoryOutcome').value;
+  if (protocol) params.set('protocol', protocol);
+  if (outcome) params.set('outcome', outcome);
+  const items = await api('/desktops/sessions/history?' + params);
+  const target = $('#desktopHistory'); target.replaceChildren();
+  if (!items.length) {
+    target.append(node('div','empty-state','No remote desktop sessions recorded yet.'));
+    return;
+  }
+  for (const item of items) {
+    const row = node('div','asset-row desktop-history-row');
+    const title = node('div');
+    title.append(node('strong','',item.label),
+      node('small','',`${item.protocol.toUpperCase()} · ${item.channel_count} channel(s)`));
+    const start = node('div','mono',new Date(item.started_at*1000).toLocaleString());
+    const duration = item.ended_at ? `${Math.max(0,item.ended_at-item.started_at)}s` : 'In progress';
+    const status = node('div','environment-column',`${item.outcome} · ${duration}`);
+    row.append(title,start,status); target.append(row);
+  }
+}
+function desktopCurrent() { return desktopTabs.get(currentDesktopTab); }
+function desktopActionsEnabled(enabled, session) {
+  $('#desktopCAD').disabled = !enabled || !!session?.record.read_only;
+  $('#desktopClipboard').disabled = !enabled || !!session?.record.read_only || session?.record.protocol === 'spice';
+  $('#desktopRemoteClipboard').disabled = !enabled || !session?.clipboardText;
+  $('#desktopFullscreen').disabled = !enabled;
+  $('#desktopDisconnect').disabled = !enabled;
+}
+function renderDesktopTabs() {
+  const nav = $('#desktopSessionTabs'); const host = $('#desktopViewports'); nav.replaceChildren();
+  for (const [id, session] of desktopTabs) {
+    const tab = node('div', 'tab-group');
+    const select = button(`${session.record.protocol.toUpperCase()} · ${session.record.label}`, 'tab-select' + (id === currentDesktopTab ? ' active' : ''), () => selectDesktopTab(id));
+    select.setAttribute('role', 'tab'); select.setAttribute('aria-selected', String(id === currentDesktopTab));
+    select.setAttribute('aria-controls', 'desktop-' + id);
+    const close = button('×', 'tab-close', () => closeDesktopTab(id)); close.setAttribute('aria-label', `Disconnect ${session.record.label}`);
+    tab.append(select, close); nav.append(tab);
+    session.surface.classList.toggle('active', id === currentDesktopTab);
+  }
+  $('#desktopSessionCount').textContent = `${desktopTabs.size} session${desktopTabs.size === 1 ? '' : 's'} open`;
+  $('#desktopConnectionState').textContent = desktopCurrent()?.status || 'No active session';
+  desktopActionsEnabled(!!desktopCurrent(), desktopCurrent());
+  const empty = host.querySelector('.empty-state');
+  if (empty) empty.classList.toggle('hidden', desktopTabs.size > 0);
+}
+function selectDesktopTab(id) {
+  if (!desktopTabs.has(id)) return;
+  currentDesktopTab = id; navigate('desktops'); renderDesktopTabs();
+  const session = desktopCurrent();
+  requestAnimationFrame(() => { fitDesktop(session); session.surface.focus(); });
+}
+function closeDesktopTab(id) {
+  const session = desktopTabs.get(id); if (!session) return;
+  session.keyboard?.reset();
+  if (session.frame) {
+    session.frame.contentWindow?.postMessage({kind:'switchyard-spice-stop'}, location.origin);
+    session.frame.src = 'about:blank';
+  } else session.client.disconnect();
+  session.surface.remove();
+  session.resizeObserver?.disconnect(); desktopTabs.delete(id);
+  if (currentDesktopTab === id) currentDesktopTab = desktopTabs.keys().next().value || null;
+  renderDesktopTabs();
+  if (currentDesktopTab) selectDesktopTab(currentDesktopTab);
+}
+function closeAllDesktops() {
+  for (const id of [...desktopTabs.keys()]) closeDesktopTab(id);
+}
+function fitDesktop(session) {
+  if (!session || session.frame || !session.client) return;
+  const screen = session.client.getDisplay();
+  const width = screen.getWidth(), height = screen.getHeight();
+  if (!width || !height) return;
+  const maxWidth = session.surface.clientWidth - 16, maxHeight = session.surface.clientHeight - 16;
+  screen.scale(Math.max(0.15, Math.min(maxWidth / width, maxHeight / height, 1.5)));
+}
+async function openDesktop(record) {
+  if (record.protocol !== 'spice' && (!window.Guacamole?.Client || !window.Guacamole?.WebSocketTunnel)) {
+    throw Error('The Guacamole browser library is not installed. Rebuild the full Switchyard image.');
+  }
+  let password;
+  if (record.auth_type === 'interactive') {
+    password = prompt(`Password for ${record.protocol.toUpperCase()} on ${record.host}. Leave blank for passwordless remote access.`);
+    if (password === null) return;
+  }
+  if (desktopTabs.size >= 8) throw Error('At most 8 remote desktops can remain connected.');
+  const size = {
+    width: record.width, height: record.height, dpi: record.dpi,
+  };
+  const response = await api(`/desktops/${record.id}/ticket`, { method: 'POST', body: { ...size, ...(password !== undefined ? {password} : {}) } });
+  password = null;
+  if (record.protocol === 'spice') {
+    openSpiceDesktop(record, response);
+    return;
+  }
+  const id = crypto.randomUUID();
+  const surface = node('div', 'desktop-surface'); surface.id = 'desktop-' + id;
+  surface.tabIndex = 0; surface.setAttribute('role', 'tabpanel');
+  surface.setAttribute('aria-label', `${record.label} ${record.protocol.toUpperCase()} remote desktop`);
+  surface.append(node('p', 'desktop-initial-message', 'Negotiating encrypted browser connection…'));
+  $('#desktopViewports').append(surface);
+  const url = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/desktop/${encodeURIComponent(response.ticket)}`;
+  const tunnel = new window.Guacamole.WebSocketTunnel(url);
+  const client = new window.Guacamole.Client(tunnel);
+  const session = {id, record, client, keyboard: null, surface, status: 'Connecting…', resizeObserver: null, clipboardText: ''};
+  desktopTabs.set(id, session); currentDesktopTab = id;
+  selectDesktopTab(id);
+  client.onerror = status => {
+    session.status = `Connection error (${status?.code ?? 'unknown'})`;
+    if (currentDesktopTab === id) $('#desktopConnectionState').textContent = session.status;
+    toast(`${record.label}: ${session.status}`, true);
+  };
+  client.onstatechange = value => {
+    const states = {0: 'Idle', 1: 'Connecting…', 2: 'Waiting for desktop…', 3: 'Connected', 4: 'Disconnecting', 5: 'Disconnected'};
+    session.status = states[value] || 'Unknown connection state';
+    if (currentDesktopTab === id) $('#desktopConnectionState').textContent = session.status;
+  };
+  client.onclipboard = (stream, mime) => {
+    if (!mime || !mime.startsWith('text/')) return;
+    // Explicitly require a user click before copying a remote secret into
+    // the local operating-system clipboard. Content is never persisted.
+    let text = '', tooLarge = false;
+    const reader = new window.Guacamole.StringReader(stream);
+    reader.ontext = chunk => {
+      if (tooLarge) return;
+      text += chunk;
+      if (new TextEncoder().encode(text).length > 65536) {
+        tooLarge = true; text = '';
+      }
+    };
+    reader.onend = () => {
+      session.clipboardText = tooLarge ? '' : text;
+      if (session.id === currentDesktopTab) desktopActionsEnabled(true, session);
+    };
+  };
+  client.onresize = () => fitDesktop(session);
+  const display = client.getDisplay().getElement();
+  surface.replaceChildren(display);
+  const mouse = new window.Guacamole.Mouse(display);
+  for (const eventName of ['onmousedown', 'onmouseup', 'onmousemove']) {
+    mouse[eventName] = state => { if (!record.read_only) client.sendMouseState(state, true); };
+  }
+  const keyboard = new window.Guacamole.Keyboard(surface);
+  keyboard.onkeydown = keysym => { if (!record.read_only) client.sendKeyEvent(1, keysym); return false; };
+  keyboard.onkeyup = keysym => { if (!record.read_only) client.sendKeyEvent(0, keysym); return false; };
+  surface.addEventListener('blur', () => keyboard.reset());
+  session.keyboard = keyboard;
+  session.resizeObserver = new ResizeObserver(() => fitDesktop(session));
+  session.resizeObserver.observe(surface);
+  try { client.connect(); }
+  catch (err) { closeDesktopTab(id); throw err; }
+}
+
+/* SPICE uses an isolated iframe because its upstream HTML5 client owns fixed
+ * DOM IDs and keyboard listeners. Every frame has a single-use server ticket.
+ */
+function openSpiceDesktop(record, response) {
+  const id = crypto.randomUUID();
+  const surface = node('div', 'desktop-surface');
+  surface.id = 'desktop-' + id; surface.tabIndex = 0;
+  surface.setAttribute('role', 'tabpanel');
+  surface.setAttribute('aria-label', `${record.label} SPICE remote console`);
+  const frame = document.createElement('iframe');
+  frame.className = 'spice-viewport';
+  frame.title = `${record.label} SPICE console`;
+  frame.src = '/static/spice-view.html';
+  frame.referrerPolicy = 'no-referrer';
+  frame.allowFullscreen = true;
+  surface.append(frame);
+  $('#desktopViewports').append(surface);
+  const session = {id, record, surface, frame, status: 'Loading SPICE viewer…', client: null, keyboard: null};
+  desktopTabs.set(id, session); currentDesktopTab = id;
+  // The upstream module announces readiness only after it is initialized.
+  session.spiceCredentials = {token: response.ticket, password: response.spice_password || ''};
+  selectDesktopTab(id);
+}
+window.addEventListener('message', event => {
+  if (event.origin !== location.origin || !event.data || typeof event.data !== 'object') return;
+  for (const session of desktopTabs.values()) {
+    if (!session.frame || event.source !== session.frame.contentWindow) continue;
+    if (event.data.kind === 'switchyard-spice-ready' && session.spiceCredentials) {
+      session.frame.contentWindow.postMessage({
+        kind: 'switchyard-spice-start', ...session.spiceCredentials,
+      }, location.origin);
+      session.spiceCredentials = null;
+    } else if (event.data.kind === 'switchyard-spice-status' && typeof event.data.status === 'string') {
+      session.status = event.data.status.slice(0, 100);
+      if (session.id === currentDesktopTab) $('#desktopConnectionState').textContent = session.status;
+    }
+    break;
+  }
+});
+
+function desktopCAD() {
+  const session = desktopCurrent(); if (!session || session.record.read_only) return;
+  if (session.frame) {
+    session.frame.contentWindow?.postMessage({kind:'switchyard-spice-cad'}, location.origin);
+    return;
+  }
+  const client = session.client;
+  // X11 keysyms: Control_L, Alt_L, Delete.
+  for (const key of [0xffe3, 0xffe9, 0xffff]) client.sendKeyEvent(1, key);
+  for (const key of [0xffff, 0xffe9, 0xffe3]) client.sendKeyEvent(0, key);
+}
+function desktopSendClipboard() {
+  const session = desktopCurrent(); if (!session || session.record.read_only) return;
+  const text = prompt('Text to send to the remote desktop clipboard (max 16 KiB):');
+  if (text === null) return;
+  if (new TextEncoder().encode(text).length > 16384) { toast('Clipboard text exceeds 16 KiB.', true); return; }
+  session.client.setClipboard(text); toast('Text sent to remote clipboard.');
+}
+async function importSpiceVirtViewer() {
+  const picker = $('#spiceVVFile');
+  const file = picker.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 16384) throw Error('Virt-viewer file exceeds 16 KiB.');
+    if (desktopTabs.size >= 8) throw Error('At most 8 desktop sessions may remain connected.');
+    const contents = await file.text();
+    const response = await api('/desktops/spice/import-vv', {method:'POST',body:{contents}});
+    openSpiceDesktop({
+      id: crypto.randomUUID(), label: response.label, protocol: 'spice', read_only: false,
+      auth_type: 'interactive', environment: 'Imported session',
+    }, response);
+    toast('SPICE connection imported into a temporary session.');
+  } finally {
+    picker.value = '';
+  }
+}
+async function desktopCopyRemoteClipboard() {
+  const session = desktopCurrent();
+  if (!session?.clipboardText || session.record.protocol === 'spice') return;
+  try {
+    await navigator.clipboard.writeText(session.clipboardText);
+    toast('Remote text copied to the local clipboard.');
+  } catch {
+    prompt('Select and copy this remote clipboard text:', session.clipboardText);
+  }
+}
+function bindDesktopUI() {
+  $('#desktopNew').addEventListener('click', () => openDesktopEditor());
+  $('#spiceImport').addEventListener('click', () => $('#spiceVVFile').click());
+  $('#spiceVVFile').addEventListener('change', safeAsync(importSpiceVirtViewer));
+  $('#desktopRefresh').addEventListener('click', safeAsync(refreshDesktops));
+  $('#desktopHistoryRefresh').addEventListener('click', safeAsync(refreshDesktopHistory));
+  $('#desktopActiveRefresh').addEventListener('click', safeAsync(refreshDesktopActive));
+  $('#desktopHistoryProtocol').addEventListener('change', safeAsync(refreshDesktopHistory));
+  $('#desktopHistoryOutcome').addEventListener('change', safeAsync(refreshDesktopHistory));
+  $('#desktopHistoryExport').addEventListener('click', () => { window.location.assign('/api/desktops/sessions/export'); });
+  $('#desktopBatchProbe').addEventListener('click', async function () {
+    const button = this;
+    const query = $('#desktopSearch').value.toLowerCase().trim();
+    const visible = desktopRecords.filter(x =>
+      [x.label,x.host,x.username,x.environment,x.protocol].join(' ').toLowerCase().includes(query));
+    if (!visible.length) return toast('No visible desktops to check.');
+    button.disabled = true; button.textContent = `Checking ${Math.min(20,visible.length)}…`;
+    try {
+      const result = await api('/desktops/probes', {method:'POST',
+        body:{ids:visible.slice(0,20).map(x => x.id)}});
+      const reachable = result.results.filter(x => x.reachable).length;
+      toast(`${reachable} of ${result.count} reachable; port checks are not logins.`, reachable !== result.count);
+    } catch (error) { showError(error); }
+    finally { button.disabled=false; button.textContent='Check first 20'; }
+  });
+  $('#desktopExport').addEventListener('click', () => { window.location.assign('/api/desktops/export'); });
+  $('#desktopImport').addEventListener('click', () => $('#desktopImportFile').click());
+  $('#desktopImportFile').addEventListener('change', async function () {
+    const file = this.files?.[0]; this.value = '';
+    if (!file) return;
+    if (file.size > 1024 * 1024) return showError(Error('Inventory file must be at most 1 MiB.'));
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (parsed.format !== 'switchyard-desktops-v1' || !Array.isArray(parsed.connections))
+        throw Error('Not a Switchyard desktop inventory export.');
+      if (!confirm(`Import ${parsed.connections.length} new desktops? Existing entries will not be overwritten.`)) return;
+      const result = await api('/desktops/import', {method:'POST', body:parsed});
+      await refreshDesktops(); toast(`Imported ${result.created} desktop configurations.`);
+    } catch (error) { showError(error); }
+  });
+  $('#desktopSearch').addEventListener('input', renderDesktopList);
+  $('#desktopProtocol').addEventListener('change', desktopProtocolChange);
+  $('#desktopAuth').addEventListener('change', desktopAuthChange);
+  $('#desktopModalClose').addEventListener('click', () => $('#desktopDialog').close());
+  $('#desktopCancel').addEventListener('click', () => $('#desktopDialog').close());
+  $('#desktopForm').addEventListener('submit', safeAsync(saveDesktop));
+  $('#desktopCAD').addEventListener('click', desktopCAD);
+  $('#desktopClipboard').addEventListener('click', desktopSendClipboard);
+  $('#desktopRemoteClipboard').addEventListener('click', safeAsync(desktopCopyRemoteClipboard));
+  $('#desktopDisconnect').addEventListener('click', () => { if (currentDesktopTab) closeDesktopTab(currentDesktopTab); });
+  $('#desktopFullscreen').addEventListener('click', safeAsync(async () => { const session = desktopCurrent(); if (!session) return; if (document.fullscreenElement) await document.exitFullscreen(); else await session.surface.requestFullscreen(); fitDesktop(session); }));
+  document.addEventListener('fullscreenchange', () => fitDesktop(desktopCurrent()));
+  $('#desktopSessionTabs').addEventListener('keydown', event => {
+    if (!['ArrowRight','ArrowLeft'].includes(event.key)) return;
+    const ids = [...desktopTabs.keys()]; if (!ids.length) return;
+    const index = ids.indexOf(currentDesktopTab);
+    event.preventDefault(); selectDesktopTab(ids[(index + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length]);
+  });
+  window.addEventListener('resize', () => fitDesktop(desktopCurrent()));
+}
+
+function safeAsync(fn) { return event => { Promise.resolve(fn(event)).catch(showError); }; }
+function bind() {
+  bindDesktopUI();
+  $('#clock').textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value } }); $('#loginPassword').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
+  $$('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
+  $$('[data-action="new-asset"]').forEach(b => b.addEventListener('click', () => openAsset()));
+  $('#logoutBtn').addEventListener('click', safeAsync(async () => { await api('/logout', { method: 'POST' }); setLogin(); }));
+  $('#assetAuth').addEventListener('change', syncAuthFields);
+  $('#assetSearch').addEventListener('input', renderAssets);
+  $('#assetForm').addEventListener('submit', safeAsync(saveAsset));
+  $('#closeAssetDialog').addEventListener('click', () => $('#assetDialog').close());
+  $('#cancelAsset').addEventListener('click', () => $('#assetDialog').close());
+  $('#fileBrowse').addEventListener('click', safeAsync(browseFiles));
+  $('#fileUpload').addEventListener('change', safeAsync(uploadFile));
+  $('#fileUploadButton').addEventListener('click', () => $('#fileUpload').click());
+  $('#terminalTabs').addEventListener('keydown', event => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const ids = [...state.tabs.keys()]; if (ids.length < 2) return;
+    const index = ids.indexOf(state.currentTab), delta = event.key === 'ArrowRight' ? 1 : -1;
+    const next = ids[(index + delta + ids.length) % ids.length];
+    event.preventDefault(); selectTab(next);
+    const tabs = $$('.tab-select', $('#terminalTabs')); tabs[ids.indexOf(next)]?.focus();
+  });
+  $('#fileMkdir').addEventListener('click', safeAsync(createRemoteFolder));
+  $('#closeFileEditor').addEventListener('click', () => $('#fileEditorDialog').close());
+  $('#cancelFileEdit').addEventListener('click', () => $('#fileEditorDialog').close());
+  $('#fileEditorForm').addEventListener('submit', safeAsync(saveFileEditor));
+  $('#healthRefresh').addEventListener('click', safeAsync(checkHealth));
+  $('#healthAsset').addEventListener('change', safeAsync(refreshHealthHistory));
+  $('#newRunbook').addEventListener('click', resetRunbookForm);
+  $('#cancelRunbook').addEventListener('click', resetRunbookForm);
+  $('#runbookForm').addEventListener('submit', safeAsync(saveRunbook));
+  $('#runbookRefresh').addEventListener('click', safeAsync(refreshRunbooks));
+  $('#dockerRefresh').addEventListener('click', safeAsync(refreshDocker));
+  $('#dockerShowContainers').addEventListener('click', () => dockerView('containers'));
+  $('#dockerShowImages').addEventListener('click', () => dockerView('images'));
+  $('#dockerShowNetworks').addEventListener('click', () => dockerView('networks'));
+  $('#dockerShowVolumes').addEventListener('click', () => dockerView('volumes'));
+  $('#dockerShowStacks').addEventListener('click', () => dockerView('stacks'));
+  $('#dockerDetailClose').addEventListener('click', () => $('#dockerDetails').classList.add('hidden'));
+  $('#keysRefresh').addEventListener('click', safeAsync(refreshKeys));
+  $('#keyGenerateForm').addEventListener('submit', safeAsync(async event => {
+    event.preventDefault(); const name = $('#keyGenerateName').value;
+    await api('/keys/generate', { method: 'POST', body: { name } });
+    $('#keyGenerateForm').reset(); toast('Ed25519 key created. Install its public key on the remote account.'); await refreshKeys();
+  }));
+  $('#keyImportForm').addEventListener('submit', safeAsync(async event => {
+    event.preventDefault(); const file = $('#keyImportFile').files?.[0]; if (!file) return;
+    if (file.size > 16384) { toast('Private key exceeds 16 KiB.', true); return; }
+    const data = new FormData(); data.set('file', file);
+    await api('/keys/import?name=' + encodeURIComponent($('#keyImportName').value), { method: 'POST', body: data });
+    $('#keyImportForm').reset(); toast('Private key imported.'); await refreshKeys();
+  }));
+  $('#backupDownload').addEventListener('click', safeAsync(async () => {
+    await savePrivateDownload('/backup', 'switchyard-backup.zip'); toast('Backup downloaded. Store it in a protected location.');
+  }));
+  $('#vaultRefresh').addEventListener('click', safeAsync(vaultStatus));
+  $('#vaultConfigForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/vault/configure', { method: 'POST', body: { server_url: $('#vaultUrl').value } }); toast('Vault server configured.'); vaultStatus(); }));
+  $('#vaultLoginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/vault/login', { method: 'POST', body: { client_id: $('#vaultClientId').value, client_secret: $('#vaultClientSecret').value } }); $('#vaultClientSecret').value = ''; toast('Bitwarden CLI authenticated. Unlock your vault next.'); vaultStatus(); }));
+  $('#vaultUnlockForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/vault/unlock', { method: 'POST', body: { master_password: $('#vaultMaster').value } }); $('#vaultMaster').value = ''; toast('Vault unlocked in server memory.'); await vaultStatus(); await vaultItems(); }));
+  $('#vaultLock').addEventListener('click', safeAsync(async () => { await api('/vault/lock', { method: 'POST' }); $('#vaultItems').replaceChildren(node('div', 'empty-state', 'Vault locked.')); toast('Vault locked.'); vaultStatus(); }));
+  $('#vaultLogout').addEventListener('click', safeAsync(async () => { if (!confirm('Log the Bitwarden CLI out? Saved login items cannot be used until you authenticate and unlock again.')) return; await api('/vault/logout', { method: 'POST' }); $('#vaultItems').replaceChildren(node('div', 'empty-state', 'Vault logged out.')); toast('CLI logged out.'); await vaultStatus(); }));
+  $('#vaultItemsRefresh').addEventListener('click', safeAsync(async () => { await api('/vault/sync', { method: 'POST' }); await vaultItems(); toast('Vault synced.'); }));
+  $('#scanForm').addEventListener('submit', safeAsync(scanHost));
+  $('#refreshHosts').addEventListener('click', safeAsync(refreshHosts));
+  $('#auditRefresh').addEventListener('click', safeAsync(() => refreshAudit()));
+  $('#auditApply').addEventListener('click', safeAsync(async () => { auditFilter = $('#auditFilter').value.trim(); await refreshAudit(); }));
+  $('#auditReset').addEventListener('click', safeAsync(async () => { auditFilter = ''; $('#auditFilter').value = ''; await refreshAudit(); }));
+  $('#auditMore').addEventListener('click', safeAsync(() => refreshAudit(true)));
+  $('#auditExport').addEventListener('click', safeAsync(async () => {
+    await savePrivateDownload('/audit/export', 'switchyard-audit.csv'); toast('Audit journal downloaded.');
+  }));
+  $('#passwordForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/password', { method: 'POST', body: { current_password: $('#currentPassword').value, new_password: $('#newPassword').value } }); event.target.reset(); toast('Administrator password changed.'); }));
+  window.addEventListener('resize', () => { if (state.page === 'terminals' && state.currentTab) state.tabs.get(state.currentTab)?.fit.fit(); });
+  api('/me').then(setShell).catch(() => setLogin());
+}
+window.addEventListener('DOMContentLoaded', bind);

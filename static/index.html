@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#e9e6dc">
+  <title>Switchyard · Remote operations</title>
+  <link rel="stylesheet" href="/static/xterm.css">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/xterm.js" defer></script>
+  <script src="/static/addon-fit.js" defer></script>
+  <script src="/static/guacamole.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <main id="login" class="login-layout">
+    <section class="login-story">
+      <div class="wordmark"><span class="sigil">S<span>↗</span></span> SWITCHYARD</div>
+      <h1>Every machine.<br><em>One control room.</em></h1>
+      <p>A focused place to reach your infrastructure. Your connections, your credentials, your network.</p>
+      <div class="login-bottom"><span class="live-dot"></span> Private operations console <span class="edition">01 / 2026</span></div>
+    </section>
+    <section class="login-panel">
+      <form id="loginForm" class="login-form">
+        <span class="form-index">SECURE ACCESS</span>
+        <h2>Welcome back.</h2>
+        <p>Sign in to enter your control room.</p>
+        <label for="loginUsername">Username</label>
+        <input id="loginUsername" autocomplete="username" required value="admin">
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required>
+        <button class="action-primary" type="submit">Enter Switchyard <span aria-hidden="true">↗</span></button>
+        <small id="loginError" class="form-error" role="alert"></small>
+      </form>
+    </section>
+  </main>
+  <div id="shell" class="shell hidden">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand"><span class="sigil">S<span>↗</span></span><div><strong>SWITCHYARD</strong><small>OPERATIONS / 0.4</small></div></div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav id="navigation">
+        <button data-page="overview" class="nav-item active"><span class="nav-symbol">◫</span> Overview</button>
+        <button data-page="assets" class="nav-item"><span class="nav-symbol">▤</span> Assets</button>
+        <button data-page="desktops" class="nav-item"><span class="nav-symbol">▣</span> Remote desktops <span id="desktopCount" class="count">0</span></button>
+        <button data-page="terminals" class="nav-item"><span class="nav-symbol">⌁</span> Terminals <span id="terminalCount" class="count">0</span></button>
+        <button data-page="files" class="nav-item"><span class="nav-symbol">≡</span> File transfer</button>
+        <button data-page="docker" class="nav-item"><span class="nav-symbol">⬡</span> Docker</button>
+        <button data-page="health" class="nav-item"><span class="nav-symbol">◉</span> Host health</button>
+        <button data-page="runbooks" class="nav-item"><span class="nav-symbol">⌘</span> Runbooks</button>
+      </nav>
+      <div class="nav-label spaced">ADMINISTRATION</div>
+      <nav id="adminNavigation">
+        <button data-page="vault" class="nav-item"><span class="nav-symbol">◇</span> Vaultwarden</button>
+        <button data-page="keys" class="nav-item"><span class="nav-symbol">⚿</span> SSH keys</button>
+        <button data-page="trust" class="nav-item"><span class="nav-symbol">⌘</span> Host trust</button>
+        <button data-page="activity" class="nav-item"><span class="nav-symbol">◷</span> Audit trail</button>
+        <button data-page="settings" class="nav-item"><span class="nav-symbol">⚙</span> Settings</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="account-circle">A</div><div class="account-text"><strong>Administrator</strong><span>Local account</span></div><button id="logoutBtn" class="signout" title="Sign out" aria-label="Sign out">↗</button></div>
+    </aside>
+    <main class="body-pane">
+      <header class="topbar"><div class="breadcrumb"><span>SWITCHYARD</span><b>/</b><strong id="bread">Overview</strong></div><div class="top-right"><span class="online"><i></i> Gateway available</span><span id="clock"></span></div></header>
+      <section id="page-overview" class="page content-page">
+        <div class="section-kicker">01 — CONTROL ROOM</div>
+        <div class="heading-row"><div><h1>Good to see you.</h1><p>Your infrastructure, without the clutter.</p></div><button class="action-primary" data-action="new-asset">+ Add a connection</button></div>
+        <div class="metrics"><div><div class="metric-label">MANAGED ASSETS</div><div id="metricAssets" class="metric-value">—</div><div class="metric-sub">Saved connections</div></div><div><div class="metric-label">ENVIRONMENTS</div><div id="metricGroups" class="metric-value">—</div><div class="metric-sub">Organized workspaces</div></div><div><div class="metric-label">AUDIT EVENTS</div><div id="metricEvents" class="metric-value">—</div><div class="metric-sub">Persisted locally</div></div></div>
+        <div class="two-heading"><h2>Quick connections</h2><button class="text-button" data-page="assets">View all assets →</button></div><div id="quickAssets" class="asset-grid"></div>
+        <div class="overview-footer"><strong>Designed for direct access.</strong><span>SSH host keys are verified before connecting. Vault credentials are resolved on demand.</span></div>
+      </section>
+      <section id="page-assets" class="page content-page hidden"><div class="section-kicker">02 — ASSET DIRECTORY</div><div class="heading-row"><div><h1>All your machines.</h1><p>Connections stay here, even when containers change.</p></div><button class="action-primary" data-action="new-asset">+ New asset</button></div><div class="list-controls"><input id="assetSearch" type="search" placeholder="Search by name, host, environment…" aria-label="Search assets"><span id="assetTotal"></span></div><div id="assetList" class="asset-table"></div></section>
+      <section id="page-terminals" class="page terminal-page hidden"><div class="terminal-heading"><div><div class="section-kicker">03 — LIVE WORKSPACE</div><h1>Terminal.</h1></div><button class="action-small" data-page="assets">+ Connect to host</button></div><div id="terminalTabs" class="terminal-tabs" role="tablist"></div><div id="terminalPanels" class="terminal-panels"><div class="empty-state">No terminal sessions open. Select an asset and choose <strong>Connect</strong>.</div></div><div class="terminal-hint">Remote sessions close on disconnect. Enable tmux on an asset to resume its shell across reconnections.</div></section>
+      <section id="page-desktops" class="page content-page hidden">
+        <div class="section-kicker">REMOTE ACCESS / RDP + VNC + SPICE</div>
+        <div class="heading-row"><div><h1>Desktops, in reach.</h1><p>Open RDP, VNC and SPICE virtual-machine consoles. Sessions use private gateways and remain inside your server.</p></div><div class="form-actions"><button id="desktopRefresh" class="action-quiet" type="button">Refresh</button><button id="desktopBatchProbe" class="action-quiet" type="button">Check first 20</button><button id="desktopExport" class="action-quiet" type="button">Export connections</button><button id="desktopImport" class="action-quiet" type="button">Import connections</button><input id="desktopImportFile" type="file" accept=".json,application/json" hidden aria-label="Switchyard desktop inventory JSON"><button id="spiceImport" class="action-quiet" type="button">Open .vv file</button><input id="spiceVVFile" type="file" accept=".vv,text/plain" hidden aria-label="Virt-viewer console file"><button id="desktopNew" class="action-primary" type="button">+ Add desktop</button></div></div>
+        <div class="desktop-gateway-state" id="desktopGateway" role="status" aria-live="polite">Checking private RDP/VNC gateway…</div>
+        <div class="list-controls"><input id="desktopSearch" type="search" aria-label="Search desktop connections" placeholder="Search desktop, host, environment…"><span id="desktopTotal"></span></div>
+        <div id="desktopList" class="asset-table"><div class="empty-state">No saved desktops.</div></div>
+        <div class="desktop-session-heading"><div><h2>Live desktop workspace</h2><p>Each opened tab is a private, temporary session. Closing a tab disconnects it.</p></div><span id="desktopSessionCount" role="status">0 active</span></div>
+        <div id="desktopSessionTabs" class="terminal-tabs" role="tablist" aria-label="Remote desktop sessions"></div>
+        <div class="desktop-toolbar"><button id="desktopCAD" type="button" class="action-quiet" disabled>Ctrl+Alt+Del</button><button id="desktopClipboard" type="button" class="action-quiet" disabled>Send text</button><button id="desktopRemoteClipboard" type="button" class="action-quiet" disabled>Copy remote text</button><button id="desktopFullscreen" type="button" class="action-quiet" disabled>Fullscreen</button><button id="desktopDisconnect" type="button" class="action-quiet danger" disabled>Disconnect</button><span id="desktopConnectionState" role="status">No active session</span></div>
+        <div id="desktopViewports" class="desktop-viewports"><div class="empty-state">Choose a saved RDP, VNC or SPICE connection and select Open desktop.</div></div>
+        <div class="desktop-session-heading"><div><h2>Server-side active sessions</h2><p>Review connections across browser tabs and disconnect abandoned sessions.</p></div><button id="desktopActiveRefresh" type="button" class="action-quiet">Refresh active sessions</button></div>
+        <div id="desktopActiveSessions" class="asset-table"><div class="empty-state">No server-side remote desktops are active.</div></div>
+        <div class="desktop-session-heading"><div><h2>Recent connection sessions</h2><p>Start and end times, protocol, and outcome. Screen content and credentials are never recorded.</p></div><div class="form-actions"><label class="sr-only" for="desktopHistoryProtocol">Session protocol</label><select id="desktopHistoryProtocol" aria-label="Filter sessions by protocol"><option value="">All protocols</option><option value="rdp">RDP</option><option value="vnc">VNC</option><option value="spice">SPICE</option></select><label class="sr-only" for="desktopHistoryOutcome">Session status</label><select id="desktopHistoryOutcome" aria-label="Filter sessions by outcome"><option value="">All statuses</option><option value="opening">Opening</option><option value="open">Open</option><option value="closed">Closed</option><option value="failed">Failed</option></select><button id="desktopHistoryExport" type="button" class="action-quiet">Export CSV</button><button id="desktopHistoryRefresh" type="button" class="action-quiet">Refresh history</button></div></div>
+        <div id="desktopHistory" class="asset-table"><div class="empty-state">No remote desktop sessions recorded.</div></div>
+        <p class="desktop-hint">Private networks only. RDP validates the server certificate by default; explicit certificate bypass is available but not recommended. VNC and SPICE remote network traffic can be unencrypted unless independently protected. SPICE TLS verifies server certificates by default.</p>
+      </section>
+      <section id="page-files" class="page content-page hidden"><div class="section-kicker">04 — SFTP OPERATIONS</div><div class="heading-row"><div><h1>Files, directly.</h1><p>Browse and transfer without leaving your browser.</p></div></div><div class="file-controls"><label>Remote host<select id="fileAsset"></select></label><label>Directory<input id="filePath" value="." placeholder="/var/log"></label><button id="fileBrowse" class="action-small">Browse</button><button type="button" id="fileUploadButton" class="upload-button">Upload file</button><input type="file" id="fileUpload" hidden><button class="action-quiet" id="fileMkdir">New folder</button></div><div id="fileLocation" class="path-bar">No directory selected</div><div id="fileList" class="asset-table"><div class="empty-state">Select a machine to browse its files.</div></div></section>
+      <section id="page-docker" class="page content-page hidden"><div class="section-kicker">05 — CONTAINER OPERATIONS</div><div class="heading-row"><div><h1>Containers, in context.</h1><p>Manage Docker on your connected servers over verified SSH — no privileged local socket mount.</p></div></div><div class="file-controls"><label>Docker host<select id="dockerAsset"></select></label><button id="dockerRefresh" class="action-small">Load containers</button></div><div id="dockerHostLabel" class="path-bar">Choose a server with Docker installed and an authorized SSH account.</div><div class="file-controls"><button id="dockerShowContainers" class="action-quiet">Containers</button><button id="dockerShowImages" class="action-quiet">Images</button><button id="dockerShowNetworks" class="action-quiet">Networks</button><button id="dockerShowVolumes" class="action-quiet">Volumes</button><button id="dockerShowStacks" class="action-quiet">Compose stacks</button></div><div id="dockerSummary" class="path-bar" role="status">No remote daemon selected.</div><div id="dockerList" class="asset-table"><div class="empty-state">Choose an SSH asset to inspect its containers.</div></div><div id="dockerDetails" class="docker-detail hidden" role="region" aria-label="Container details"><div class="two-heading"><h2 id="dockerDetailTitle">Container details</h2><button class="action-quiet" id="dockerDetailClose">Close details</button></div><div id="dockerDetailContent"></div></div></section>
+      <section id="page-health" class="page content-page hidden">
+        <div class="section-kicker">06 — REMOTE TELEMETRY</div>
+        <div class="heading-row"><div><h1>Read the machine.</h1><p>Agentless Linux status through a trusted SSH connection. Each check saves a bounded historical snapshot.</p></div><button id="healthRefresh" class="action-small">Check health</button></div>
+        <div class="file-controls"><label for="healthAsset">Linux host<select id="healthAsset"></select></label></div>
+        <div id="healthStatus" class="path-bar" role="status">Choose an SSH asset to read its current status.</div>
+        <div id="healthMetrics" class="health-metrics"></div>
+        <div class="two-heading"><h2>Recent observations</h2><span>Latest 50 checks · persisted in SQLite</span></div>
+        <div id="healthHistory" class="asset-table"><div class="empty-state">No observations recorded yet.</div></div>
+      </section>
+      <section id="page-runbooks" class="page content-page hidden">
+        <div class="section-kicker">07 — OPERATOR PLAYBOOKS</div>
+        <div class="heading-row"><div><h1>Repeat the right command.</h1><p>Persist command templates, execute them over verified SSH, and retain outcome metadata without storing console output.</p></div><button id="newRunbook" class="action-small">New runbook</button></div>
+        <form id="runbookForm" class="panel-form runbook-form">
+          <h2 id="runbookFormTitle">Create a runbook</h2>
+          <label for="runbookName">Name</label><input id="runbookName" maxlength="100" required placeholder="Inspect web service">
+          <label for="runbookDescription">Purpose and operational notes</label><input id="runbookDescription" maxlength="500" placeholder="Read-only service inspection">
+          <label for="runbookCommand">Remote shell command</label><textarea id="runbookCommand" class="command-input" rows="5" maxlength="8192" spellcheck="false" required placeholder="systemctl status nginx --no-pager"></textarea>
+          <label class="check-line"><input id="runbookConfirm" type="checkbox" checked> Require confirmation before execution</label>
+          <div class="form-actions"><button class="action-primary" type="submit">Save runbook</button><button id="cancelRunbook" type="button" class="action-quiet">Clear form</button></div>
+        </form>
+        <div class="two-heading"><h2>Saved procedures</h2><button id="runbookRefresh" class="text-button">Refresh →</button></div>
+        <div id="runbookList" class="asset-table"></div>
+        <div class="runbook-console"><div class="two-heading"><h2>Last execution</h2><span id="runbookResultMeta">No command executed in this browser session</span></div><pre id="runbookOutput" class="log-console" role="status">Choose Run on a saved procedure to execute it.</pre></div>
+        <div class="two-heading"><h2>Execution history</h2><span>Metadata only · output is never persisted</span></div><div id="runbookHistory" class="asset-table"></div>
+      </section>
+      <section id="page-vault" class="page content-page hidden"><div class="section-kicker">06 — CREDENTIAL SOURCE</div><div class="heading-row"><div><h1>Vaultwarden.</h1><p>Bring credentials to connections, not into this database.</p></div><button id="vaultRefresh" class="action-small">Refresh status</button></div><div class="vault-status"><span class="small-status">VAULT STATUS</span><strong id="vaultState">Checking</strong><span id="vaultServer">—</span></div><div class="forms-columns"><form id="vaultConfigForm" class="panel-form"><h2>1. Select your server</h2><p>Use the HTTPS origin of your existing Vaultwarden service.</p><label for="vaultUrl">Server URL</label><input id="vaultUrl" type="url" placeholder="https://vault.example.net" required><button class="action-small" type="submit">Save server</button></form><form id="vaultLoginForm" class="panel-form"><h2>2. Authenticate CLI</h2><p>Vaultwarden personal API credentials. These are not saved in Switchyard's database.</p><label for="vaultClientId">Personal client ID</label><input id="vaultClientId" autocomplete="off" required><label for="vaultClientSecret">Personal client secret</label><input id="vaultClientSecret" type="password" autocomplete="off" required><button class="action-small" type="submit">Authenticate</button></form><form id="vaultUnlockForm" class="panel-form"><h2>3. Unlock on demand</h2><p>Your master password is used once to unlock the CLI and is never stored in Switchyard.</p><label for="vaultMaster">Master password</label><input id="vaultMaster" type="password" autocomplete="off" required><div class="form-actions"><button class="action-small" type="submit">Unlock vault</button><button id="vaultLock" class="action-quiet" type="button">Lock</button><button id="vaultLogout" class="action-quiet" type="button">Log out</button></div></form></div><div class="two-heading"><h2>Credential references</h2><button id="vaultItemsRefresh" class="text-button">Sync & list items →</button></div><div id="vaultItems" class="asset-table"><div class="empty-state">Unlock your vault to see available logins. Passwords are never displayed here.</div></div></section>
+      <section id="page-keys" class="page content-page hidden">
+        <div class="section-kicker">07 — KEY INVENTORY</div><div class="heading-row"><div><h1>SSH keys, managed.</h1><p>Generate or import unencrypted private keys. The private material never leaves server storage through the API.</p></div><button id="keysRefresh" class="action-small">Refresh keys</button></div>
+        <div class="forms-columns"><form id="keyGenerateForm" class="panel-form"><h2>Generate Ed25519</h2><label for="keyGenerateName">Key filename</label><input id="keyGenerateName" maxlength="120" placeholder="prod_ed25519" required pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*"><button class="action-primary" type="submit">Generate key</button></form>
+        <form id="keyImportForm" class="panel-form"><h2>Import existing key</h2><label for="keyImportName">Key filename</label><input id="keyImportName" maxlength="120" placeholder="existing_admin" required pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*"><label for="keyImportFile">OpenSSH private key (16 KiB max)</label><input id="keyImportFile" type="file" required><button class="action-small" type="submit">Import securely</button></form></div>
+        <div class="settings-note"><strong>Provisioning</strong><p>Copy the public key and add it to the remote account's <code>~/.ssh/authorized_keys</code>. Assign the filename to an asset using Mounted SSH key. Private keys remain in <code>/data/keys</code> with restricted permissions.</p></div><div class="two-heading"><h2>Available keys</h2><span id="keyCount"></span></div><div id="keysList" class="asset-table"></div>
+      </section>
+      <section id="page-trust" class="page content-page hidden"><div class="section-kicker">07 — CONNECTION INTEGRITY</div><div class="heading-row"><div><h1>Trusted hosts.</h1><p>Review a fingerprint before granting a machine access.</p></div></div><form id="scanForm" class="inline-form"><label>Hostname or IP<input id="scanHost" required placeholder="192.168.1.10"></label><label>SSH port<input id="scanPort" type="number" value="22" min="1" max="65535" required></label><button type="submit" class="action-small">Retrieve host key</button></form><div id="scanResult" class="hidden fingerprint-review"></div><div class="two-heading"><h2>Accepted fingerprints</h2><button id="refreshHosts" class="text-button">Refresh →</button></div><div id="trustedList" class="asset-table"></div></section>
+      <section id="page-activity" class="page content-page hidden"><div class="section-kicker">08 — AUDIT JOURNAL</div><div class="heading-row"><div><h1>Everything leaves a trace.</h1><p>Connection attempts, vault actions, asset changes and file transfers.</p></div><div class="form-actions"><button class="action-small" id="auditRefresh">Refresh journal</button><button class="action-quiet" id="auditExport">Export CSV</button></div></div><div class="file-controls"><label>Filter by action<input id="auditFilter" placeholder="docker.restart"></label><button id="auditApply" class="action-small">Apply</button><button id="auditReset" class="action-quiet">Reset</button></div><div id="auditList" class="asset-table"></div><div class="form-actions"><button id="auditMore" class="action-small">Load older events</button></div></section>
+      <section id="page-settings" class="page content-page hidden"><div class="section-kicker">09 — CONTROL SETTINGS</div><div class="heading-row"><div><h1>Keep it secure.</h1><p>Small decisions that protect the whole control room.</p></div></div><form id="passwordForm" class="panel-form settings-form"><h2>Change administrator password</h2><label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password" required><label for="newPassword">New password (at least 14 characters)</label><input id="newPassword" type="password" autocomplete="new-password" minlength="14" required><button class="action-primary" type="submit">Update password</button></form><div class="settings-note"><h2>Persistence</h2><p>SQLite assets, audit records, host trust and Bitwarden CLI state live in your persistent Docker volume under <code>/data</code>. Remote tmux sessions are maintained on each destination machine.</p><div class="form-actions"><button type="button" class="action-small" id="backupDownload">Download consistent backup</button></div><p>The backup contains a live SQLite snapshot and trusted host keys. Sessions, private SSH keys, Vaultwarden CLI cache and bootstrap secrets are intentionally excluded. Keep this file protected; it includes password hashes and asset metadata.</p></div></section>
+    </main>
+  </div>
+  <dialog id="desktopDialog" class="asset-dialog" aria-labelledby="desktopModalTitle">
+    <form id="desktopForm"><div class="modal-top"><div><span class="section-kicker">REMOTE DESKTOP CONFIGURATION</span><h2 id="desktopModalTitle">Add a desktop</h2></div><button type="button" id="desktopModalClose" class="close-button" aria-label="Close desktop editor">×</button></div>
+      <div class="modal-grid">
+        <label>Display name<input name="label" required maxlength="120" placeholder="Windows workstation"></label>
+        <label>Protocol<select name="protocol" id="desktopProtocol"><option value="rdp">Microsoft RDP</option><option value="vnc">VNC</option><option value="spice">SPICE (QEMU / Proxmox)</option></select></label>
+        <label>Host or IP<input name="host" required maxlength="253" placeholder="192.168.1.30"></label>
+        <label>Remote port<input name="port" id="desktopPort" type="number" min="1" max="65535" value="3389" required></label>
+        <label>Username<input name="username" maxlength="128" autocomplete="off" placeholder="Administrator"></label>
+        <label class="desktop-rdp-only">Windows domain<input name="domain" maxlength="128" placeholder="Optional"></label>
+        <label>Authentication<select name="auth_type" id="desktopAuth"><option value="interactive">Ask for password when connecting</option><option value="vault">Vaultwarden item</option><option value="none">No password</option></select></label>
+        <label id="desktopVaultGroup" class="hidden">Vaultwarden item ID<input name="credential_ref" maxlength="120" list="availableVaultItems" placeholder="Vault item UUID"></label>
+        <label>Environment<input name="environment" maxlength="80" placeholder="Production"></label>
+        <label class="desktop-rdp-only">RDP security<select name="security"><option value="nla">NLA (preferred)</option><option value="tls">TLS</option><option value="rdp">Legacy RDP</option><option value="any">Automatic negotiation</option></select></label>
+        <label class="desktop-rdp-only check-line"><input type="checkbox" name="ignore_cert"> Ignore remote certificate validation (unsafe)</label>
+        <label class="desktop-spice-only check-line hidden"><input type="checkbox" name="spice_tls"> Connect over SPICE TLS (validated certificate)</label>
+        <p class="desktop-spice-only desktop-modal-note hidden">SPICE HTML5 is a basic console viewer. Vaultwarden-backed SPICE passwords are resolved only when connecting, then handed temporarily to the in-browser SPICE client. Read-only mode is not available for SPICE.</p>
+        <label class="check-line"><input type="checkbox" name="read_only"> View only, disable input</label>
+        <label>Initial width<input name="width" type="number" min="640" max="3840" value="1366" required></label>
+        <label>Initial height<input name="height" type="number" min="480" max="2160" value="768" required></label>
+        <label>Screen DPI<input name="dpi" type="number" min="72" max="192" value="96" required></label>
+        <label class="wide">Notes<input name="note" maxlength="500" placeholder="Access details or machine purpose"></label>
+      </div><div class="modal-actions"><button type="button" id="desktopCancel" class="action-quiet">Cancel</button><button type="submit" class="action-primary" id="desktopSave">Save desktop</button></div>
+    </form>
+  </dialog>
+  <dialog id="fileEditorDialog" class="asset-dialog editor-dialog" aria-labelledby="fileEditorTitle">
+    <form id="fileEditorForm"><div class="modal-top"><div><span class="section-kicker">REMOTE FILE EDITOR</span><h2 id="fileEditorTitle">Edit text file</h2></div><button type="button" id="closeFileEditor" class="close-button" aria-label="Close editor">×</button></div>
+      <p id="fileEditorPath" class="mono editor-path"></p>
+      <p class="editor-warning">UTF-8 text only · 256 KiB maximum · atomic replacement where supported · conflicts reject an outdated version.</p>
+      <label for="fileEditorContent">File content</label><textarea id="fileEditorContent" class="command-input" rows="17" spellcheck="false" aria-describedby="fileEditorPath"></textarea>
+      <div class="modal-actions"><button id="cancelFileEdit" type="button" class="action-quiet">Cancel</button><button id="saveFileEdit" type="submit" class="action-primary">Save to server</button></div>
+    </form>
+  </dialog>
+  <dialog id="assetDialog" class="asset-dialog"><form id="assetForm" method="dialog"><div class="modal-top"><div><span class="section-kicker">ASSET CONFIGURATION</span><h2 id="assetModalTitle">Add a connection</h2></div><button type="button" id="closeAssetDialog" class="close-button" aria-label="Close dialog">×</button></div><div class="modal-grid"><label>Display name<input name="label" required maxlength="120" placeholder="Production gateway"></label><label>Environment<input name="environment" maxlength="80" placeholder="Production"></label><label>Host or IP<input name="host" required maxlength="253" placeholder="10.0.0.10"></label><label>SSH port<input name="port" type="number" min="1" max="65535" value="22" required></label><label>SSH username<input name="username" required maxlength="128" placeholder="ops"></label><label>Authentication<select name="auth_type" id="assetAuth"><option value="interactive">Ask at connection</option><option value="vault">Vaultwarden item</option><option value="key">Mounted SSH key</option></select></label><label id="credentialGroup" class="hidden">Vault item ID<input name="credential_ref" list="availableVaultItems" placeholder="Bitwarden item UUID"><datalist id="availableVaultItems"></datalist></label><label id="keyGroup" class="hidden">Key filename under /data/keys<input name="key_file" placeholder="id_ed25519"></label><label class="wide">Notes<input name="note" maxlength="500" placeholder="Maintenance windows, location, purpose"></label><label class="check-line wide"><input type="checkbox" name="use_tmux"> Reattach to remote tmux on reconnection (tmux required on server)</label></div><div class="modal-actions"><button type="button" id="cancelAsset" class="action-quiet">Cancel</button><button class="action-primary" type="submit">Save connection</button></div></form></dialog>
+</body>
+</html>

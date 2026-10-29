@@ -1,0 +1,7 @@
+.env
+secrets/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.sqlite3*
+node_modules/

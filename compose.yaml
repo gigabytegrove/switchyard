@@ -1,0 +1,67 @@
+services:
+  guacd:
+    image: guacamole/guacd:1.6.0
+    restart: unless-stopped
+    networks:
+      - default
+      - remote_access
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "1.5"
+  switchyard:
+    depends_on:
+      - guacd
+    networks:
+      - default
+      - remote_access
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: switchyard:0.4.0
+    container_name: switchyard
+    restart: unless-stopped
+    ports:
+      - "${SWITCHYARD_BIND:-127.0.0.1}:9791:9791"
+    environment:
+      SWITCHYARD_DATA: /data
+      GUACD_HOST: guacd
+      GUACD_PORT: "4822"
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://switchyard.example.net}
+      ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      ALLOW_HTTP_VAULT: ${ALLOW_HTTP_VAULT:-false}
+    secrets:
+      - admin_password
+    volumes:
+      - switchyard_data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    mem_limit: 768m
+    cpus: "2.0"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9791/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+
+secrets:
+  admin_password:
+    file: ./secrets/admin_password.txt
+
+volumes:
+  switchyard_data:
+
+networks:
+  remote_access:
+    internal: true

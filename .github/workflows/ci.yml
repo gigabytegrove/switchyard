@@ -1,0 +1,35 @@
+name: Switchyard quality gates
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  source-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Backend test suite
+        run: python -m pytest -q
+      - name: Frontend syntax checks
+        run: |
+          node --check static/app.js
+          node --check static/spice-view.js
+  image-build:
+    runs-on: ubuntu-24.04
+    needs: source-tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image with browser runtime assets
+        run: docker build --pull --tag switchyard:test .
+      - name: Check image includes mandatory runtime assets
+        run: docker run --rm --entrypoint /bin/bash switchyard:test /usr/local/bin/verify-runtime-assets /app/static

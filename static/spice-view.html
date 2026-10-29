@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Switchyard SPICE session</title>
+<link rel="stylesheet" href="/static/spice/spice.css">
+<style>
+  html, body { margin:0; min-height:100%; width:100%; background:#171d1b; color:#f7f5ee; }
+  body { font-family:system-ui,sans-serif; overflow:auto; }
+  #spice-area { width:100%; height:100%; min-height:480px; display:flex; align-items:center; justify-content:center; }
+  #spice-screen { position:relative; outline:0; max-width:100%; }
+  #spice-screen canvas { max-width:100%; }
+  #message-div { position:fixed; bottom:12px; left:12px; right:12px; padding:12px 16px; background:#263c36; }
+  #debug-div { display:none; }
+</style>
+</head>
+<body>
+<div id="spice-area"><div id="spice-screen" tabindex="0" aria-label="Interactive SPICE remote desktop"></div></div>
+<div id="message-div" role="status" hidden></div><div id="debug-div" hidden></div>
+<script type="module" src="/static/spice-view.js"></script>
+</body>
+</html>
