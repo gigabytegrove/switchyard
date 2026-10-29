@@ -1,4 +1,11 @@
-## 0.5.1-dev.1 — machine-centric operations and integrated administration
+## 0.5.1-dev.2 — LAN HTTP connection fix
+
+- Fix `crypto.randomUUID is not a function` on private-IP HTTP browsers using the Web Crypto `getRandomValues()` API for RFC 4122 v4 view IDs.
+- Correct four connection paths: SSH terminal, RDP/VNC, SPICE, and imported SPICE consoles.
+- Add a 10,000-ID JavaScript regression test for crypto APIs available on insecure origins; run it in GitHub Actions.
+- Preserve all machines, credentials, preferences, and Docker volumes without requiring migration. Live protocol operations remain subject to real-target testing.
+
+## 0.5.1-dev.2 — machine-centric operations and integrated administration
 
 - Replace disconnected SSH/desktop/file/Docker/health navigation with a single machines inventory and host profiles containing Overview, Terminal, Remote Desktop, File Transfer, Docker and Health tabs.
 - Add persisted nested machine folders and environment filtering without losing existing SSH or desktop records. Group desktop-only hosts with SSH profiles by normalized host identity.

@@ -24,6 +24,22 @@ function button(label, cls, handler) {
   const el = node('button', cls, label); el.type = 'button'; el.addEventListener('click', handler); return el;
 }
 function showError(error) { toast(error?.message || 'The request failed.', true); }
+/**
+ * Browser-only session identifier. crypto.randomUUID() is unavailable on
+ * ordinary LAN HTTP. getRandomValues() works in insecure contexts.
+ * These are view IDs only; authorization stays server-side.
+ */
+function clientSessionId() {
+  if (!globalThis.crypto || typeof globalThis.crypto.getRandomValues !== 'function') {
+    throw Error('This browser cannot provide cryptographically secure session IDs.');
+  }
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 async function api(path, { method = 'GET', body, headers = {} } = {}) {
   const opts = { method, credentials: 'same-origin', headers: { ...headers } };
   if (body !== undefined) {
@@ -421,7 +437,7 @@ async function connect(aid) {
   const password = await promptPassword(asset);
   if (password === null) return;
   if (!window.Terminal || !window.FitAddon) { toast('Terminal assets are missing from the container.', true); return; }
-  const id = crypto.randomUUID();
+  const id = clientSessionId();
   const tab = { id, asset, ws: null, password, terminal: new window.Terminal({ cursorBlink: true, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: 14, lineHeight: 1.25, scrollback: 5000, theme: { background: '#202027', foreground: '#F5F6F9', cursor: '#E24E62', selectionBackground: '#58586A' } }), fit: new window.FitAddon.FitAddon() };
   tab.terminal.loadAddon(tab.fit);
   state.tabs.set(id, tab); state.currentTab = id;
@@ -1133,7 +1149,7 @@ async function openDesktop(record) {
     openSpiceDesktop(record, response);
     return;
   }
-  const id = crypto.randomUUID();
+  const id = clientSessionId();
   const surface = node('div', 'desktop-surface'); surface.id = 'desktop-' + id;
   surface.tabIndex = 0; surface.setAttribute('role', 'tabpanel');
   surface.setAttribute('aria-label', `${record.label} ${record.protocol.toUpperCase()} remote desktop`);
@@ -1195,7 +1211,7 @@ async function openDesktop(record) {
  * DOM IDs and keyboard listeners. Every frame has a single-use server ticket.
  */
 function openSpiceDesktop(record, response) {
-  const id = crypto.randomUUID();
+  const id = clientSessionId();
   const surface = node('div', 'desktop-surface');
   surface.id = 'desktop-' + id; surface.tabIndex = 0;
   surface.setAttribute('role', 'tabpanel');
@@ -1259,7 +1275,7 @@ async function importSpiceVirtViewer() {
     const contents = await file.text();
     const response = await api('/desktops/spice/import-vv', {method:'POST',body:{contents}});
     openSpiceDesktop({
-      id: crypto.randomUUID(), label: response.label, protocol: 'spice', read_only: false,
+      id: clientSessionId(), label: response.label, protocol: 'spice', read_only: false,
       auth_type: 'interactive', environment: 'Imported session',
     }, response);
     toast('SPICE connection imported into a temporary session.');

@@ -7,7 +7,7 @@
 Self-hosted machine profiles with SSH, SFTP, Docker, Linux health, and remote desktops (RDP, VNC, SPICE). Optional encrypted stored passwords and Vaultwarden integration.
 
 [![Source tests and Docker build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.5.1--dev.1-B72237)
+![Version](https://img.shields.io/badge/version-0.5.1--dev.2-B72237)
 ![Docker](https://img.shields.io/badge/deployment-Docker-B72237?logo=docker)
 ![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-5934AC)
 ![Status](https://img.shields.io/badge/status-development-orange)
@@ -35,6 +35,8 @@ Open **`http://YOUR-DOCKER-HOST-IP:9791`** on a trusted LAN browser. Use the **o
 ./scripts/smoke-test.sh
 docker compose ps
 ```
+
+**LAN HTTP compatibility:** Browser session IDs now use `crypto.getRandomValues()` rather than `crypto.randomUUID()`, which Chromium does not expose on private-IP plain HTTP. The fix covers SSH, RDP, VNC and SPICE connections; a CSPRNG regression test runs in CI.
 
 **Deployment images:** Docker Compose pulls published artifacts from GHCR. The app is built in GitHub Actions; Docker Hub is not required on the deployment host. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
 
