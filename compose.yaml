@@ -21,24 +21,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: switchyard:0.4.0
+    image: switchyard:0.5.0-dev.1
     container_name: switchyard
     restart: unless-stopped
     ports:
-      - "${SWITCHYARD_BIND:-0.0.0.0}:9791:9791"
-    environment:
-      SWITCHYARD_DATA: /data
-      GUACD_HOST: guacd
-      GUACD_PORT: "4822"
-      COOKIE_SECURE: ${COOKIE_SECURE:-true}
-      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
-      LAN_ORIGINS: ${LAN_ORIGINS:-}
-      MFA_KEY_FILE: /run/secrets/mfa_key
-      ADMIN_PASSWORD_FILE: /run/secrets/admin_password
-      ALLOW_HTTP_VAULT: ${ALLOW_HTTP_VAULT:-false}
-    secrets:
-      - admin_password
-      - mfa_key
+      - "0.0.0.0:9791:9791"
     volumes:
       - switchyard_data:/data
     security_opt:
@@ -57,12 +44,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 45s
-
-secrets:
-  admin_password:
-    file: ./secrets/admin_password.txt
-  mfa_key:
-    file: ./secrets/mfa_key.txt
 
 volumes:
   switchyard_data:

@@ -42,10 +42,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = Path(os.getenv('SWITCHYARD_DATA', '/data'))
+DATA = Path('/data')
 DB_FILE = DATA / 'switchyard.sqlite3'
 HASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
-COOKIE_SECURE = os.getenv('COOKIE_SECURE', 'true').lower() == 'true'
+# Network policy and credentials live in /data; no operator environment configuration.
+BOOTSTRAP_CODE: str | None = None
 SESSION_TTL = 12 * 3600
 MAX_TRANSFER = 64 * 1024 * 1024
 LOCK = threading.RLock()
@@ -59,7 +60,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='Switchyard', version='0.4.0', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title='Switchyard', version='0.5.0-dev.1', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 def connection():
@@ -138,15 +139,15 @@ def init_data():
         ):
             if column not in {r['name'] for r in db.execute(f'PRAGMA table_info({table})')}:
                 db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
+        global BOOTSTRAP_CODE
         existing = db.execute('SELECT 1 FROM users LIMIT 1').fetchone()
-        if not existing:
-            pfile = os.getenv('ADMIN_PASSWORD_FILE', '')
-            if not pfile:
-                raise RuntimeError('ADMIN_PASSWORD_FILE is mandatory on first boot')
-            password = Path(pfile).read_text().strip('\r\n')
-            if len(password) < 14:
-                raise RuntimeError('Admin bootstrap password must be at least 14 characters')
-            db.execute('INSERT INTO users(id,username,password_hash,created_at) VALUES(1,?,?,?)', ('admin', HASHER.hash(password), int(time.time())))
+        if not existing and not BOOTSTRAP_CODE:
+            BOOTSTRAP_CODE = '-'.join(secrets.token_hex(4).upper() for _ in range(3))
+            print('\nSWITCHYARD FIRST-RUN CLAIM CODE: ' + BOOTSTRAP_CODE + '\n'
+                  'Open http://YOUR-LAN-HOST:9791 and enter this code in the setup wizard.\n'
+                  'This code is valid only until initial setup completes or this container restarts.\n', flush=True)
+        if existing:
+            BOOTSTRAP_CODE = None
         db.execute('DELETE FROM sessions WHERE expires_at < ?', (int(time.time()),))
     desktops.initialize(dbconn)
     keys = DATA / 'keys'
@@ -167,56 +168,81 @@ def session_hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def saved_setting(key: str, default: str = '') -> str:
+    with dbconn() as db:
+        row = db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+    return row['value'] if row else default
+
+
 def configured_remote_origin() -> str:
-    return os.getenv('PUBLIC_ORIGIN', '').strip().rstrip('/')
+    return saved_setting('public_origin')
+
+
+def validate_network(public_origin: str, lan_origins: list[str]) -> tuple[str, list[str]]:
+    public_origin = public_origin.strip().rstrip('/')
+    if public_origin:
+        p = urlsplit(public_origin)
+        if (p.scheme != 'https' or not p.hostname or p.username or p.password
+                or p.path or p.query or p.fragment or not p.port in (None, 443)):
+            raise HTTPException(422, 'Public origin must be an HTTPS hostname without a path or custom port')
+        try:
+            ipaddress.ip_address(p.hostname)
+        except ValueError:
+            if '.' not in p.hostname:
+                raise HTTPException(422, 'Public origin requires a fully qualified DNS hostname')
+        else:
+            raise HTTPException(422, 'Use a public DNS hostname for the HTTPS reverse proxy')
+    if len(lan_origins) > 8:
+        raise HTTPException(422, 'Up to 8 LAN browser origins are supported')
+    result = []
+    for item in lan_origins:
+        value = item.strip().rstrip('/')
+        p = urlsplit(value)
+        if (p.scheme not in ('http', 'https') or not p.hostname or p.username or p.password
+                or p.path or p.query or p.fragment):
+            raise HTTPException(422, 'LAN origins must be HTTP(S) origins without paths')
+        host = p.hostname.lower()
+        try:
+            ip = ipaddress.ip_address(host)
+            allowed = ip.is_private or ip.is_loopback or ip.is_link_local
+        except ValueError:
+            allowed = ('.' not in host or host.endswith(('.lan', '.local', '.home.arpa', '.internal', '.test')))
+        if not allowed:
+            raise HTTPException(422, 'LAN DNS aliases must use local-only names, not public domains')
+        if public_origin and urlsplit(public_origin).netloc.lower() == p.netloc.lower():
+            raise HTTPException(422, 'Public HTTPS origin cannot be a LAN origin')
+        if value.lower() not in [x.lower() for x in result]:
+            result.append(value)
+    return public_origin, result
+
+
+def private_host(host: str) -> bool:
+    if not host or '/' in host or '@' in host or ',' in host or '\\' in host:
+        return False
+    parsed = urlsplit('http://' + host)
+    address = parsed.hostname or ''
+    try:
+        ip = ipaddress.ip_address(address)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        return address == 'localhost'
 
 
 def browser_origin(scope) -> tuple[str, bool]:
-    """Require an explicitly trusted hostname. Never trust forwarded IP headers."""
+    """Classify by exact Host; private-origin access never bypasses public-host MFA."""
     host = (scope.headers.get('host') or '').lower()
     if not host or '/' in host or '@' in host or ',' in host or '\\' in host:
         raise HTTPException(403, 'Untrusted host')
     remote = configured_remote_origin()
-    if remote:
-        parsed = urlsplit(remote)
-        if parsed.scheme == 'http' and parsed.netloc.lower() == host:
-            # Legacy test/development origin only; production deploy script disallows HTTP.
-            return remote, False
-        if parsed.scheme != 'https' or not parsed.hostname or parsed.path or parsed.query or parsed.fragment:
-            raise HTTPException(503, 'Invalid PUBLIC_ORIGIN configuration')
-        if host == parsed.netloc.lower():
-            return remote, True
-    lan_hosts = [item.strip().rstrip('/') for item in os.getenv('LAN_ORIGINS', '').split(',') if item.strip()]
-    for lan in lan_hosts:
-        parsed = urlsplit(lan)
-        if parsed.scheme not in ('http', 'https') or parsed.path or parsed.query or parsed.fragment:
-            raise HTTPException(503, 'Invalid LAN_ORIGINS configuration')
-        if host == parsed.netloc.lower():
+    if remote and host == urlsplit(remote).netloc.lower():
+        return remote, True
+    for lan in json.loads(saved_setting('lan_origins', '[]')):
+        if host == urlsplit(lan).netloc.lower():
             return lan, False
-    # Bare private/link-local addresses (and localhost) can be reached on the LAN.
-    address = host
-    if address.startswith('['):
-        address = address[1:].split(']', 1)[0]
-    else:
-        address = address.rsplit(':', 1)[0] if ':' in address else address
-    try:
-        ip = ipaddress.ip_address(address)
-        trusted = any(ip in network for network in (
-            ipaddress.ip_network('10.0.0.0/8'), ipaddress.ip_network('172.16.0.0/12'),
-            ipaddress.ip_network('192.168.0.0/16'), ipaddress.ip_network('127.0.0.0/8'),
-            ipaddress.ip_network('169.254.0.0/16'), ipaddress.ip_network('fc00::/7'),
-            ipaddress.ip_network('fe80::/10'), ipaddress.ip_network('::1/128'))) 
-    except ValueError:
-        trusted = address == 'localhost'
-    if trusted:
-        # The network layer (firewall) must actually limit this endpoint to LAN.
+    if private_host(host):
         scheme = 'https' if scope.url.scheme in ('https', 'wss') else 'http'
         return f'{scheme}://{host}', False
-    # Preserve existing configured HTTP development test origins, but never
-    # mistake them for an external MFA-optional public deployment.
-    if remote.startswith('http://') and urlsplit(remote).netloc.lower() == host:
-        return remote, False
-    raise HTTPException(403, 'Host is not permitted. Configure LAN_ORIGINS or PUBLIC_ORIGIN.')
+    raise HTTPException(403, 'Host is not permitted. Add a LAN alias in Settings or configure the HTTPS proxy.')
 
 
 def valid_session(token: str | None, require_mfa: bool = False) -> bool:
@@ -252,13 +278,30 @@ def session_from_ws(ws: WebSocket) -> bool:
 
 
 def mfa_cipher() -> Fernet:
-    key_path = os.getenv('MFA_KEY_FILE', '')
+    path = DATA / 'mfa.key'
     try:
-        if not key_path:
-            raise OSError('MFA_KEY_FILE not configured')
-        return Fernet(Path(key_path).read_bytes().strip())
+        if not path.exists():
+            with dbconn() as db:
+                has_enrollment = db.execute('SELECT 1 FROM users WHERE mfa_secret IS NOT NULL OR mfa_pending IS NOT NULL LIMIT 1').fetchone()
+            if has_enrollment:
+                raise HTTPException(503, 'MFA encryption key missing; recover /data/mfa.key from the original volume or backup')
+            # Open with O_EXCL; two workers cannot replace each other's keys.
+            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(fd, 'wb') as handle:
+                    handle.write(Fernet.generate_key())
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            except Exception:
+                path.unlink(missing_ok=True)
+                raise
+        if path.stat().st_mode & 0o077:
+            raise OSError('MFA key file permissions are too permissive')
+        return Fernet(path.read_bytes().strip())
+    except FileExistsError:
+        return Fernet(path.read_bytes().strip())
     except (OSError, ValueError) as exc:
-        raise HTTPException(503, 'MFA encryption key not available') from exc
+        raise HTTPException(503, 'Persistent MFA encryption key is unavailable') from exc
 
 
 def totp_step(secret: str, code: str, now: int | None = None) -> int | None:
@@ -290,14 +333,75 @@ class Credentials(BaseModel):
     totp: str = Field(default='', max_length=6)
 
 
+class InitialSetup(BaseModel):
+    claim_code: str = Field(min_length=8, max_length=64)
+    username: str = Field(min_length=3, max_length=80, pattern=r'^[a-zA-Z0-9_.-]+$')
+    password: str = Field(min_length=14, max_length=4096)
+    public_origin: str = Field(default='', max_length=255)
+    lan_origins: list[str] = Field(default_factory=list)
+
+
+class NetworkSettings(BaseModel):
+    current_password: str = Field(min_length=1, max_length=4096)
+    public_origin: str = Field(default='', max_length=255)
+    lan_origins: list[str] = Field(default_factory=list)
+    allow_http_vault: bool = False
+
+
+@app.get('/api/setup/status')
+def setup_status(request: Request):
+    browser_origin(request)
+    with dbconn() as db:
+        completed = db.execute('SELECT 1 FROM users LIMIT 1').fetchone() is not None
+    return {'setup_required': not completed, 'claim_in_container_logs': not completed}
+
+
+@app.post('/api/setup/complete')
+def setup_complete(body: InitialSetup, request: Request):
+    global BOOTSTRAP_CODE
+    verify_origin(request)
+    if browser_origin(request)[1]:
+        raise HTTPException(403, 'Initial setup requires a LAN browser origin')
+    public, aliases = validate_network(body.public_origin, body.lan_origins)
+    ip = request.client.host if request.client else 'unknown'
+    now = time.monotonic()
+    with LOCK:
+        FAILED[ip] = [t for t in FAILED.get(ip, []) if now - t < 300]
+        if len(FAILED[ip]) >= 8:
+            raise HTTPException(429, 'Too many setup attempts')
+        if BOOTSTRAP_CODE is None:
+            raise HTTPException(409, 'Already configured or setup code expired; restart the container if not configured')
+        if not hmac.compare_digest(body.claim_code.upper(), BOOTSTRAP_CODE):
+            FAILED.setdefault(ip, []).append(now)
+            raise HTTPException(403, 'Invalid setup claim code')
+        with dbconn() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM users LIMIT 1').fetchone():
+                db.execute('ROLLBACK')
+                BOOTSTRAP_CODE = None
+                raise HTTPException(409, 'Setup has already completed')
+            db.execute('INSERT INTO users(id,username,password_hash,created_at) VALUES(1,?,?,?)',
+                       (body.username, HASHER.hash(body.password), int(time.time())))
+            db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',
+                           [('public_origin', public), ('lan_origins', json.dumps(aliases))])
+            db.execute('COMMIT')
+        BOOTSTRAP_CODE = None
+        FAILED.pop(ip, None)
+    audit('setup.completed')
+    return {'ok': True, 'login_required': True}
+
+
 @app.get('/healthz')
 def health():
-    return {'status': 'ok', 'version': '0.4.0'}
+    return {'status': 'ok', 'version': '0.5.0-dev.1'}
 
 
 @app.post('/api/login')
 def login(body: Credentials, request: Request, response: Response):
     verify_origin(request)
+    with dbconn() as db:
+        if not db.execute('SELECT 1 FROM users LIMIT 1').fetchone():
+            raise HTTPException(409, 'Complete the initial setup wizard first')
     ip = request.client.host if request.client else 'unknown'
     now = time.monotonic()
     with LOCK:
@@ -354,7 +458,9 @@ def logout(request: Request, response: Response, _=Depends(require_auth)):
 
 @app.get('/api/me')
 def me(_=Depends(require_auth)):
-    return {'username': 'admin', 'role': 'administrator'}
+    with dbconn() as db:
+        name = db.execute('SELECT username FROM users WHERE id=1').fetchone()['username']
+    return {'username': name, 'role': 'administrator'}
 
 
 class MfaSetupRequest(BaseModel):
@@ -377,6 +483,30 @@ def check_admin_password(db, password: str) -> bool:
         return False
 
 
+@app.get('/api/network')
+def get_network(_=Depends(require_auth)):
+    return {'public_origin': configured_remote_origin(),
+            'lan_origins': json.loads(saved_setting('lan_origins', '[]')),
+            'allow_http_vault': saved_setting('allow_http_vault') == 'true'}
+
+
+@app.put('/api/network')
+def update_network(body: NetworkSettings, request: Request, _=Depends(require_auth)):
+    if browser_origin(request)[1]:
+        raise HTTPException(403, 'Change network access settings from the LAN')
+    public, aliases = validate_network(body.public_origin, body.lan_origins)
+    with dbconn() as db:
+        if not check_admin_password(db, body.current_password):
+            raise HTTPException(403, 'Current password incorrect')
+        db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',
+                       [('public_origin', public), ('lan_origins', json.dumps(aliases)),
+                        ('allow_http_vault', 'true' if body.allow_http_vault else 'false')])
+        db.execute('DELETE FROM sessions WHERE token_hash != ?',
+                   (session_hash(request.cookies.get('switchyard_session', '')),))
+    audit('network.updated', public or 'LAN only')
+    return {'ok': True, 'public_origin': public, 'lan_origins': aliases}
+
+
 @app.get('/api/mfa/status')
 def mfa_status(_=Depends(require_auth)):
     with dbconn() as db:
@@ -396,9 +526,10 @@ def mfa_setup(body: MfaSetupRequest, request: Request, _=Depends(require_auth)):
         secret = base64.b32encode(secrets.token_bytes(20)).decode('ascii').rstrip('=')
         db.execute('UPDATE users SET mfa_pending=?, mfa_pending_until=? WHERE id=1',
                    (mfa_cipher().encrypt(secret.encode()).decode(), int(time.time()) + 600))
+        username = db.execute('SELECT username FROM users WHERE id=1').fetchone()['username']
     from urllib.parse import quote
     issuer = 'Switchyard'
-    uri = f'otpauth://totp/{issuer}:admin?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits=6&period=30'
+    uri = f'otpauth://totp/{issuer}:{quote(username)}?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits=6&period=30'
     audit('mfa.enrollment.started')
     return {'secret': secret, 'otpauth_uri': uri, 'expires_seconds': 600}
 
@@ -626,18 +757,25 @@ def backup(_=Depends(require_auth)):
         hosts = trusted.read_bytes() if trusted.is_file() else b''
         if len(hosts) > 1024 * 1024:
             raise HTTPException(413, 'Host key inventory too large')
+        keyfile = DATA / 'mfa.key'
+        mfa_key = keyfile.read_bytes() if keyfile.is_file() else b''
+        if mfa_key and (len(mfa_key) != 44 or keyfile.stat().st_mode & 0o077):
+            raise HTTPException(503, 'Stored MFA key has invalid format or permissions')
         manifest = {
-            'application': 'Switchyard', 'format': 1, 'version': '0.4.0',
+            'application': 'Switchyard', 'format': 2, 'version': '0.5.0-dev.1',
             'created_utc': datetime.now(timezone.utc).isoformat(),
             'files': {'switchyard.sqlite3': hashlib.sha256(content).hexdigest(),
-                      'known_hosts': hashlib.sha256(hosts).hexdigest()},
-            'excluded': ['sessions', 'SSH private keys', 'Vaultwarden CLI state', 'admin bootstrap secret'],
+                      'known_hosts': hashlib.sha256(hosts).hexdigest(),
+                      'mfa.key': hashlib.sha256(mfa_key).hexdigest()},
+            'excluded': ['sessions', 'SSH private keys', 'Vaultwarden CLI state'],
+            'warning': 'SENSITIVE: includes MFA decryption key and password hashes. Store encrypted and offline.',
         }
         output = _io.BytesIO()
         with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr('manifest.json', json.dumps(manifest, indent=2))
             archive.writestr('switchyard.sqlite3', content)
             archive.writestr('known_hosts', hosts)
+            archive.writestr('mfa.key', mfa_key)
     return Response(output.getvalue(), media_type='application/zip',
                     headers={'Content-Disposition': 'attachment; filename="switchyard-backup.zip"', 'Cache-Control': 'no-store'})
 
@@ -684,7 +822,7 @@ class VaultConfig(BaseModel):
 def vault_configure(body: VaultConfig, _=Depends(require_auth)):
     global BW_SESSION
     p = urlsplit(body.server_url)
-    allow_http = os.getenv('ALLOW_HTTP_VAULT', 'false').lower() == 'true'
+    allow_http = saved_setting('allow_http_vault') == 'true'
     if (p.scheme != 'https' and not (allow_http and p.scheme == 'http')) or not p.netloc or p.username or p.password or p.path not in ('', '/') or p.query or p.fragment:
         raise HTTPException(422, 'Use a vault origin URL (HTTPS required by default)')
     with VAULT_LOCK:

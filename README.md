@@ -1,78 +1,90 @@
-# Switchyard 0.4.0
+<div align="center">
 
-Independent, self-hosted remote operations console, with persistent SQLite data and optional Vaultwarden password-vault integration. **This is an ongoing development release, not production-certified**. It is not a fork of Nexterm or Next Terminal. Use on a restricted trusted network with HTTPS termination; do not expose it directly to the Internet.
+# Switchyard
 
-## Implemented workspaces
+**Your infrastructure. One control room.**
 
-| Workspace | Implemented operations |
-| --- | --- |
-| Overview | Saved assets, environments, audit count, quick SSH connections |
-| Assets | Persistent CRUD/search, SSH port, environment, notes, tmux, SSH authentication mode |
-| Terminals | Multiple browser SSH tabs, xterm.js, resize, optional remote tmux reattachment |
-| SFTP | Browse, create directory, upload/download (64 MiB max), rename, remove file or empty directory, **UTF-8 text edit with hash conflict detection, atomic overwrite where supported** (256 KiB max) |
-| Docker | Remote Engine summary, containers/images/networks/volumes, inspect, logs/stats, start/stop/restart; **Compose project inventory, start/stop/restart** |
-| Host health | On-demand agentless Linux `/proc` and filesystem monitoring via SSH; hostname, kernel, uptime, load average, available RAM, root disk; **persistent last 500 observations per asset** |
-| Runbooks | Persistent command templates, descriptions and execution confirmation; execute against selected asset using existing auth, capture bounded output in browser, **persist only outcome metadata** |
-| Vaultwarden | HTTPS origin config, Bitwarden Password Manager CLI API key login, unlock, lock, sync, list login IDs, use password on SSH connection |
-| SSH keys | Generate Ed25519, import RSA/ECDSA/Ed25519 unencrypted private keys, copy public keys, prevent deletion when assigned |
-| Host trust | Host-key discovery and fingerprint review; explicit trust/revocation; no silent key rotation |
-| Audit | Local event journal, filter/pagination, CSV export with spreadsheet formula escaping |
-| Settings | Change admin password, revoke other sessions, download WAL-consistent SQLite + trust-list backup |
+Self-hosted SSH, SFTP, Docker operations and remote desktops (RDP, VNC, SPICE), with optional Vaultwarden credentials.
 
-## Remote desktops — RDP, VNC and SPICE (0.4.0)
+[![Source tests and Docker build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml)
+![Version](https://img.shields.io/badge/version-0.5.0--dev.1-CB562E)
+![Docker](https://img.shields.io/badge/deployment-Docker-263C36?logo=docker)
+![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-2E7362)
+![Status](https://img.shields.io/badge/status-development-orange)
 
-The **Desktops** workspace now stores named RDP, VNC and SPICE targets, supports multiple browser tabs, favorites, duplicate/edit/remove, JSON inventory import/export (excluding credentials), bulk reachability checks, session history/CSV and administrator disconnect of active sessions. Interactive passwords stay in bounded, session-bound ephemeral tickets rather than SQLite. Keyboard, mouse, resize and clipboard features depend on the selected protocol/client. **SPICE read-only enforcement is not offered**; SPICE sessions must be treated as interactive. Check the actual security configuration of the remote server before enabling a console.
+[Quick start](#quick-start) · [Setup wizard](#first-run-setup) · [Features](#features) · [Reverse proxy and MFA](#reverse-proxy-and-mfa) · [Upgrades](#upgrading-existing-installations) · [Security](#security-and-limitations)
 
-- **RDP and VNC:** A private `guacd` container (Apache Guacamole 1.6.0) performs protocol translation. The browser connects to Switchyard's authenticated WebSocket bridge, not directly to the managed desktop. `guacd` is not published on the host. Install/allow RDP or VNC on each remote target and configure network access from the Docker deployment.
-- **SPICE:** A separate isolated `spice-html5` browser viewer connects over Switchyard's authenticated, short-lived, multi-channel WebSocket proxy. It supports saved direct SPICE endpoints and one-time QEMU/Proxmox `.vv` consoles. `.vv` contents (including SPICE passwords and proxy tokens) are not stored as saved desktop credentials. Verified SPICE TLS and HTTP CONNECT proxy flows are implemented, but need live validation against your hypervisor.
-- **Vaultwarden:** Existing `bw` vault lookup can supply passwords for desktop sessions where configured. Vault sessions and target credentials must be unlocked independently.
-- **Security:** Browser sessions are bound to the authenticated Switchyard administrator session. Session limits, origin checks, connection timeouts and host-side session management reduce abuse; these are not substitutes for firewall segmentation, MFA at the proxy and TLS. Do **not** publish the guacd port or a bare SPICE TCP port on the Internet.
+</div>
 
-For offline deployments, note that the Dockerfile retrieves the Guacamole 1.6.0 browser artifact from Maven Central during image build, npm client packages, and Debian `spice-html5=0.3.0-2`. The image build fails if required runtime JavaScript and CSS files cannot be found. A source ZIP alone does not include all third-party browser runtime assets.
+> **Development build, not production-certified.** Source tests and selected deployment contracts can pass without proving live SSH/RDP/VNC/SPICE connectivity or complete hypervisor/OS compatibility. Restrict the host TCP 9791 port to your LAN, and do not expose it directly to the public Internet.
 
-Run the included smoke test against a temporary deployed instance (`scripts/smoke-test.sh`) and test a real RDP, VNC and SPICE server before production use. In particular, a passing API unit test **does not verify video, audio, keyboard, clipboard or hypervisor-console correctness**.
+## Quick start
 
-## Install on the LAN (default)
-
-Requires Docker Engine, Docker Compose V2, OpenSSL, and reachable target hosts. **No SSH tunnel is required.** Switchyard listens on TCP 9791 on all host interfaces (`SWITCHYARD_BIND=0.0.0.0`) and authenticates LAN users with the administrator username/password. Keep the Docker host firewall restricted to trusted local subnets. **Never directly port-forward TCP/9791 from your router to the Internet.** Docker's published ports can bypass some simple host-firewall rules, so confirm effective firewall behavior with the actual Docker host network configuration.
+Prerequisites: Linux Docker Engine and the Docker Compose v2 plugin. No `.env`, secrets files, SSH tunnel, configuration YAML, CLI password generation, or database editing is required.
 
 ```bash
 git clone https://github.com/gigabytegrove/switchyard.git
 cd switchyard
-cp .env.example .env
-chmod 600 .env
 ./scripts/deploy.sh
+docker compose logs switchyard
+```
+
+Open **`http://YOUR-DOCKER-HOST-IP:9791`** on a trusted LAN browser. Use the **one-time claim code** printed by `docker compose logs switchyard` to start the setup wizard. The container binds `0.0.0.0:9791` by default; your firewall must limit who can reach it. To validate the HTTP endpoint and browser-runtime files afterward:
+
+```bash
 ./scripts/smoke-test.sh
-cat secrets/admin_password.txt
+docker compose ps
 ```
 
-Browse to `http://DOCKER-HOST-LAN-IP:9791` from another LAN device and sign in as `admin`. Change your password in Settings. The deployment helper generates `secrets/admin_password.txt` and `secrets/mfa_key.txt` if absent, sets permissions to `0600`, and retains both on upgrades. Do not overwrite either secret. The default application listener is `0.0.0.0:9791`; the `guacd` service is *not* published on the host.
+**Note:** `docker compose build` downloads third-party browser dependencies and a Guacamole artifact. First build requires Internet access. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
 
-LAN IP addresses in `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and local loopback/link-local addresses are accepted automatically. For LAN DNS names, add exact origin(s) to `LAN_ORIGINS`, separated by commas, e.g. `LAN_ORIGINS=http://switchyard.lan:9791,http://ops.home.arpa:9791`. Never list your public Internet domain in `LAN_ORIGINS`.
+## First-run setup
 
-## HTTPS reverse proxy + mandatory external TOTP
+1. **Claim the appliance.** Enter the one-time bootstrap code emitted in the container logs. This code changes each time an unconfigured container restarts and is invalidated after setup. Choose an administrator username and password (14-character minimum). Passwords use Argon2id hashes.
+2. **LAN access.** The server already accepts private IP addresses. Optionally supply extra local DNS origins such as `http://switchyard.lan:9791` or `http://ops.home.arpa:9791`.
+3. **Remote access.** Optionally enter the exact HTTPS hostname to use in your reverse proxy (for example `https://switchyard.example.com`). It is stored in SQLite, not a file or environment variable. Remote sign-in is **blocked** until TOTP is enrolled from an authenticated LAN session under **Settings → Two-factor authentication**.
 
-**Enrollment order matters:** First sign in from a trusted LAN address, open **Settings → Two-factor authentication**, enter your administrator password, and generate an authenticator key. Add it to a TOTP-compatible authenticator app, then enter the displayed six-digit code to enable MFA. You must complete enrollment before external sign-in will work. The encrypted TOTP secret is persisted in SQLite, and its encryption key resides separately at `secrets/mfa_key.txt` (include both in a secure backup).
+After first-run completion, use **Settings → Browser and network access** to update trusted LAN aliases, your HTTPS hostname, and the optional trusted-LAN HTTP Vaultwarden exception. Saving requires the current admin password and revokes other sessions. Settings apply without a container rebuild or restart.
 
-Next set the public HTTPS origin in `.env`:
+### Where configuration actually lives
 
-```dotenv
-SWITCHYARD_BIND=0.0.0.0
-LAN_ORIGINS=
-PUBLIC_ORIGIN=https://ops.example.net
-COOKIE_SECURE=true
-```
+| Item | Storage | Edited through |
+| --- | --- | --- |
+| Admin username and Argon2id password hash | `/data/switchyard.sqlite3` | First-run wizard; password change in Settings |
+| Browser origins, HTTPS proxy domain, Vaultwarden HTTP exception | SQLite settings table | First-run wizard; Settings |
+| TOTP encrypted enrollment | SQLite users table | Settings |
+| TOTP encryption key | `/data/mfa.key` (mode `0600`) | Generated and maintained internally; never enter manually |
+| SSH assets, desktops, runbooks, audit, health observations | SQLite | Relevant workspaces |
+| SSH keys, SSH host trust, Bitwarden CLI runtime files | `/data/keys`, `/data/known_hosts`, `/data/bw` | Relevant workspaces |
 
-Set `PUBLIC_ORIGIN` to your *actual* HTTPS hostname, then run `./scripts/deploy.sh` again. **Public-origin logins require username + password + a six-digit TOTP**, even if the browser has a previously created password-only LAN session. The admin login form includes a TOTP field. Sessions authenticated without MFA cannot use APIs, terminal WebSockets or remote desktop sessions through the public origin. All external requests must pass via HTTPS with the original public `Host` header preserved.
+**The `/data` Docker named volume is required for persistence.** Never use `docker compose down -v` during upgrades or normal maintenance. A container/image replacement does not reset settings when the volume is preserved.
 
-### Nginx Proxy Manager / nginx
+## Features
 
-For NPM, configure a Proxy Host for your configured `PUBLIC_ORIGIN`, forward HTTP to your Docker host's LAN IP on port `9791`, enable **WebSockets Support**, request a valid TLS certificate, enable **Force SSL**, and ensure the incoming `Host` remains the public hostname. NPM must not route arbitrary/unmatched hostnames to Switchyard; this is an authentication boundary. Do not create a router NAT rule exposing `9791` directly.
+| Workspace | Capabilities |
+| --- | --- |
+| SSH terminals | Browser-based SSH, tabs, dynamic resizing, managed keys, optional tmux reattachment |
+| File manager | SFTP browse/upload/download/rename/delete, folder creation, atomic text editing with conflict detection |
+| Docker | SSH-based container lists, start/stop/restart, inspect, stats, logs, images, volumes, networks and Compose projects |
+| Remote desktops | Browser RDP/VNC through isolated `guacd`; SPICE via isolated viewer, direct hosts and ephemeral Proxmox/QEMU `.vv` consoles |
+| Assets | Named hosts, favorites, environments, tags/notes and credential modes |
+| Runbooks | Saved SSH commands, explicit confirmation, bounded execution, persistent execution outcome history |
+| Health | On-demand Linux metrics, uptime, load, memory, disk and observation history |
+| Vaultwarden | Bitwarden CLI backed login, sync, unlock/lock and item-to-connection credential retrieval |
+| Security | SSH host-key trust, TOTP for HTTPS proxy, session controls, CSRF origin verification, activity journal |
+| Backups | Consistent database snapshot, host trust, and TOTP recovery key with SHA-256 manifest (sensitive backup) |
 
-Equivalent nginx proxy directives (inside its TLS `location /`):
+## Reverse proxy and MFA
+
+1. From the trusted LAN URL, sign in and enroll an authenticator under **Settings → Two-factor authentication**. Enter your administrator password, scan or copy the presented authenticator secret, then confirm with the current six-digit code.
+2. Under **Settings → Browser and network access**, enter your actual public **HTTPS origin**. Do not put the public hostname in LAN aliases. No source config edits or restart are required.
+3. In Nginx Proxy Manager, set an HTTPS Proxy Host forwarding to `http://YOUR-DOCKER-HOST-LAN-IP:9791`. Enable **WebSockets Support**, a valid TLS certificate, **Force SSL**, and preserve the original public `Host` header. Reject unmatched hostnames at the proxy.
+4. Open your HTTPS domain and sign in with **username + password + TOTP**. A password-only LAN session is not valid through the remote hostname.
+
+Equivalent nginx location directives:
 
 ```nginx
-proxy_pass http://192.168.0.35:9791;  # replace with your actual Docker host address
+proxy_pass http://YOUR-DOCKER-HOST-LAN-IP:9791;
 proxy_http_version 1.1;
 proxy_set_header Host $http_host;
 proxy_set_header Upgrade $http_upgrade;
@@ -81,87 +93,44 @@ proxy_set_header X-Forwarded-Proto https;
 proxy_read_timeout 3600s;
 ```
 
-The reverse proxy must exclusively serve the exact configured HTTPS hostname and reject unknown `Host` values. Since the LAN port remains accessible, the application is not a substitute for firewall policy. For extra assurance, terminate remote access at a VPN or a separately authenticated proxy rather than forwarding the app's bare TCP port. The backend does not treat client-provided `X-Forwarded-For` as proof of LAN proximity.
+**Security boundary:** Public-origin classification is based on exact configured `Host` and browser `Origin`; forwarding to it requires an HTTPS reverse proxy that **rejects unknown hostnames**. Never publicly forward TCP 9791. Docker-published host ports may bypass simplistic UFW rules, so test effective host firewall/DOCKER-USER policy. Host-IP LAN connections use password authentication; public-host sessions always require MFA. SSH and desktop WebSockets enforce the same authentication rules.
 
-### Authentication and MFA behavior
-
-- LAN login: administrator password; TOTP optional. LAN HTTP session cookies are host-only, HttpOnly, SameSite=Strict, and not marked Secure so LAN browsing actually works.
-- Public HTTPS login: administrator password plus time-based six-digit code, with single-use per time step, rate limiting, and Secure/HttpOnly/SameSite=Strict cookies.
-- External access before MFA enrollment: explicitly blocked. MFA setup and disable actions are LAN-only, require the current password; disabling also requires a fresh TOTP code.
-- Public HTTPS host must match `PUBLIC_ORIGIN` exactly, with no alternative public domains; requests from other hostnames are rejected. Remote desktop and terminal WebSockets enforce the same host/origin + MFA-session check.
-- TOTP enrollment and secret encryption key survive restarts. Back up `secrets/mfa_key.txt` securely alongside the persistent data volume. Without that key, the saved MFA enrollment cannot be recovered.
-
-For upgrades, preserve your existing data volume, Compose project name, `.env` and `secrets/` and use `./scripts/deploy.sh`; **never** run `docker compose down -v`.
-
-## Upgrade from 0.1.0 / 0.2.0
-
-**Preserve your named volume and Compose project name.** If you simply deploy the new ZIP from a differently named directory, Compose will typically create a differently named volume and your old asset database will appear missing. Upgrade the *existing* deployment directory instead:
-
-1. Take an independent backup of the existing deployment data volume and save `.env` and `secrets/` separately. Save current image/source for rollback.
-2. Extract the new source to a staging directory and copy its application files into the existing project directory. Preserve the existing `.env`, `secrets/` and volume; do not use `docker compose down -v`.
-3. Run:
+## Upgrading existing installations
 
 ```bash
-docker compose build --no-cache
-docker compose up -d
-docker compose ps
-curl --fail http://127.0.0.1:9791/healthz
+cd switchyard
+git pull --ff-only origin main
+./scripts/deploy.sh
+./scripts/smoke-test.sh
 ```
 
-New runbook and host-snapshot tables are **created automatically**, leaving existing assets, SSH keys, trust inventory, audit records and Vaultwarden CLI cache in the volume. Rollback to the original v0.2.0 files/image is possible after a backed-up restore (older versions ignore the new tables), but do not claim full rollback until you verify your old version boots and logs in.
+For an older `.env`/Docker-secret based Switchyard installation, `./scripts/deploy.sh` attempts to migrate the existing MFA encryption key from the **currently running old container** into `/data/mfa.key` *before* recreating it. This preserves existing TOTP secrets. Keep the old container available for the migration. **If the original key is missing and MFA was previously enrolled, remote authentication is intentionally blocked** rather than silently generating an incompatible replacement key. Back up the volume before upgrading. Existing users and their password hashes remain unchanged, and network addresses can be re-entered in the UI. Old `.env` and `secrets/` files are no longer consulted; remove them securely only after validating the upgrade and rollback plan.
 
-## Runbooks — operational behavior and security
+### Backup and recovery
 
-Create a named command under **Runbooks**. Set an optional explanation and keep *Require confirmation* enabled for potentially disruptive work. Choose an asset and select **Run**; the command is executed as that asset's SSH identity with a **30-second deadline** and **256 KiB combined stdout/stderr limit**. The output appears in the current browser view only and is not written to the database or audit journal; status, target, start time, elapsed time and exit code are persisted. Errors record a failed run. No output replay is available after navigating away or reloading.
+**Settings → Download consistent backup** exports SQLite (excluding live sessions), `known_hosts`, and `mfa.key`, plus a SHA-256 manifest. **The backup contains password hashes and the TOTP decryption key. Treat it as a sensitive credential archive: encrypt it at rest and do not share it.** This is not a full disaster-recovery archive: SSH private keys and Vaultwarden CLI state are not included, and they must be backed up independently from the Docker volume if required. Restore only with the container stopped and file ownership/permissions preserved (UID/GID 10001). Never overwrite live WAL files.
 
-**Runbook commands are stored in plain text in SQLite.** Do not embed secrets directly in a command or description; use the asset's existing Vaultwarden SSH authentication where appropriate. Commands execute with the same privileges as a normal shell, so a misconfigured runbook can be destructive. The product currently has *single-administrator access only*; multi-user RBAC and per-runbook permissions are not implemented.
+## Security and limitations
 
-## Host health
+- Switchyard is a **single-administrator development release**. Multi-user RBAC, SSO, mandatory MFA on every LAN login, and comprehensive production security review remain outstanding.
+- The application uses separate HTTP- and HTTPS-origin cookies. Public sessions require TOTP, with replay prevention and rate limiting. Enrollment and policy changes are LAN-only.
+- RDP/VNC translation runs in a private `guacd` network; the SPICE viewer uses a separate authenticated WebSocket proxy. Neither private gateway port is published on the Docker host.
+- Managed Docker operations occur over SSH against configured hosts. The Switchyard container **does not mount `/var/run/docker.sock`** and is not privileged.
+- Live Windows RDP, third-party VNC, SPICE/QEMU/Proxmox, Vaultwarden API key login, and full browser UI workflows require testing on your own systems. A passing mocked API test or image build is not a real hardware acceptance test.
+- Initial setup claim codes appear in **Docker logs**: protect Docker daemon access, rotate the code by restarting an unconfigured container, and treat anyone with Docker admin as already privileged.
 
-Choose an asset under **Host health** and select **Check health**. This runs a fixed Linux shell probe over the verified SSH connection and parses `/proc/uptime`, `/proc/loadavg`, `/proc/meminfo`, `df` and `uname`. It stores a new success/failure observation on each check; older observations are trimmed to 500 per asset. This is **manual collection, not a background monitoring daemon**. It requires Linux with a POSIX shell and supported `/proc` fields. Non-Linux targets may fail and leave a failed observation.
-
-## Safe SFTP text editor
-
-Choose **Files**, browse to a text file, and click **Edit text**. Files are UTF-8, regular and at most **256 KiB**. Switchyard reads and hashes the original content, prompts before saving, compares the remote file again, writes to an exclusive temp name in the same directory, preserves the file permission bits, rechecks the remote hash and uses the server's OpenSSH `posix-rename` extension to atomically replace it. When the hash differs, it returns HTTP 409 and **does not silently overwrite**. If the server does not support atomic replacement it refuses the update (HTTP 501); use another editor. There remains a small compare-and-swap race if another editor changes the file immediately after the final hash check. Do not rely on the tool for concurrent high-integrity editing without external locking. Uploads still exclusively create and do not overwrite an existing file.
-
-## Remote Docker and Compose
-
-The SSH account must have existing rights to operate the target Docker daemon. Docker-group membership is effectively root-equivalent. The container running Switchyard itself has neither a Docker socket mount nor elevated Docker capabilities. Container metadata returned from `inspect` is allowlisted to avoid returning raw environment variables. **Log content may contain sensitive values**; it stays in the requesting browser response.
-
-Compose inventory uses `docker compose ls --all --format json`. For start/stop/restart, Switchyard checks that the requested project exists in the current remote list, validates its project name, obtains its Compose configuration filenames from the server-side inventory, restricts them to absolute paths and quotes them before execution. Multi-file Compose projects support up to eight config paths. No implicit `up`, `down`, deletion, image pull or recreation is performed. Existing stacks with unsupported configuration metadata are inspect-only. The remote account must have the Compose V2 plugin and read access to its project files. Docker Compose syntax was checked against the official CLI reference: <https://docs.docker.com/reference/cli/docker/compose/ls/> and <https://docs.docker.com/reference/cli/docker/compose/>.
-
-## Vaultwarden / SSH trust / private keys
-
-Use **Bitwarden Password Manager CLI** (`bw`) with your existing Vaultwarden server, not Secrets Manager (`bws`). Configure the HTTPS origin, login using personal API key values, unlock with your vault master password and choose the appropriate vault item UUID in an asset. The application never persists the cleartext SSH password or vault master password in its own SQLite database. The CLI may save encrypted account/cache state in `/data/bw`; an unlocked `BW_SESSION` is memory-only and is lost on restart. Lock or log out from the Vaultwarden section when done.
-
-Under **Host trust**, discover a key and independently verify the fingerprint before approving. A changed key must be explicitly revoked and re-approved. Under **SSH keys**, generated/imported private keys remain at `/data/keys` as restricted volume files; the API exposes only public material. Passphrase-protected keys are not supported yet.
-
-## Data backup
-
-**Settings → Download consistent backup** exports a SQLite WAL-consistent snapshot and `known_hosts`, with a SHA-256 manifest. The new runbooks, run history and host snapshots are in the SQLite file. Active sessions are stripped. The ZIP intentionally excludes private keys, Bitwarden CLI state, `.env` and bootstrap passwords, so it is **not a complete disaster recovery bundle**. The SQLite export includes password hashes, saved commands and asset metadata; encrypt and protect the backup. To restore, verify hashes, stop the container, restore files to the existing volume with owner UID/GID `10001`, then restart. Never overwrite a live SQLite database. The database limit remains 32 MiB and known-hosts limit 1 MiB.
-
-## Earlier 0.3.0 verification (historical; not 0.4.0 certification)
-
-- Python static compilation of backend and test suite: passed.
-- API regression suite: **24 passed, 1 skipped**. The skip is the test requiring a real Paramiko installation in this environment. Tests cover API authentication, commands, SFTP mock operations, Compose invocation, JSON parsing, host history, backup exclusions, and v0.2-table upgrade simulation.
-- JavaScript: `node --check static/app.js` passed.
-- HTML: 116 JavaScript id references resolved with zero duplicates; all navigation pages resolved. Static frontend-contract test is part of pytest.
-- Linux host health command: executed locally against the runtime's actual Linux `/proc` and parsed successfully. This is *not* a remote SSH integration test.
-- FastAPI server: local `GET /healthz` returned version `0.3.0` during the prior release.
-- Docker Engine and Compose build: not installed in this test environment, so **image build was not tested**.
-- Live Paramiko SSH, SFTP server, remote Docker/Compose workloads and Vaultwarden CLI: **not tested**.
-- Chromium browser navigation: blocked by administrator policy (`ERR_BLOCKED_BY_ADMINISTRATOR`); no successful UI-rendering test claimed.
-
-Run local tests with the pinned test requirements:
+## Development and verification
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
+python3 -m pip install -r requirements-dev.txt
+python3 -m pytest -q
 node --check static/app.js
+node --check static/spice-view.js
+bash -n scripts/deploy.sh
 ```
 
-## Remaining work
+Continuous integration: [source tests and Docker browser-runtime build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml). The source package alone does not include downloaded third-party Guacamole/xterm/SPICE browser assets; the Dockerfile installs them.
 
-SSH jump/proxy chains, multi-user RBAC/SSO/OIDC, full session recording and retention policies, background polling/alerts and trend charts, concurrent-safe server-side file locks, advanced upload/resume and remote editing beyond 256 KiB, scheduled and approval-based runbooks, passphrase-protected key storage, tested install/upgrade/rollback on an actual Docker host, and real Vaultwarden acceptance are **not implemented** in this version.
+---
+
+**Switchyard** is independent software. It is not affiliated with Nexterm, Apache Guacamole, Bitwarden or Vaultwarden. Apache Guacamole and SPICE HTML5 retain their respective upstream licenses. No production-ready claim is made for this development build.

@@ -10,18 +10,17 @@ from app import main as m
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     password = 'serious-development-password-12345'
-    secret = tmp_path / 'password'
-    secret.write_text(password)
-    monkeypatch.setenv('ADMIN_PASSWORD_FILE', str(secret))
-    monkeypatch.setenv('PUBLIC_ORIGIN', 'http://testserver')
-    monkeypatch.setenv('COOKIE_SECURE', 'false')
-    monkeypatch.setattr(m, 'COOKIE_SECURE', False)
     monkeypatch.setattr(m, 'DATA', tmp_path / 'data')
     monkeypatch.setattr(m, 'DB_FILE', tmp_path / 'data' / 'switchyard.sqlite3')
     monkeypatch.setattr(m, 'BW_SESSION', None)
     with m.LOCK:
         m.FAILED.clear()
     with TestClient(m.app, base_url='http://testserver') as client:
+        assert client.get('/api/setup/status', headers={'Host':'127.0.0.1:9791'}).json()['setup_required']
+        response = client.post('/api/setup/complete', headers={'Host':'127.0.0.1:9791','Origin':'http://127.0.0.1:9791'}, json={
+          'claim_code':m.BOOTSTRAP_CODE,'username':'admin','password':password,
+          'lan_origins':['http://testserver']})
+        assert response.status_code == 200, response.text
         yield client
 
 
@@ -269,9 +268,10 @@ def test_backup_wal_snapshot_without_sessions_or_secrets(client):
     assert result.headers['content-type'].startswith('application/zip')
     assert b'VERY-SECRET-' not in result.content
     with zipfile.ZipFile(io.BytesIO(result.content)) as z:
-        assert sorted(z.namelist()) == ['known_hosts', 'manifest.json', 'switchyard.sqlite3']
+        assert sorted(z.namelist()) == ['known_hosts', 'manifest.json', 'mfa.key', 'switchyard.sqlite3']
         manifest = json.loads(z.read('manifest.json'))
-        assert manifest['version'] == '0.4.0'
+        assert manifest['version'] == '0.5.0-dev.1'
+        assert hashlib.sha256(z.read('mfa.key')).hexdigest() == manifest['files']['mfa.key']
         dbdata = z.read('switchyard.sqlite3')
         assert hashlib.sha256(dbdata).hexdigest() == manifest['files']['switchyard.sqlite3']
         assert z.read('known_hosts') == b'example invalid-public-host-key\n'

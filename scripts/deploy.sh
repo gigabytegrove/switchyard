@@ -1,52 +1,42 @@
 #!/usr/bin/env bash
-# Switchyard Docker deployment - first install or in-place rebuild.
+# Zero-configuration deployment. Operator settings are made in the web UI.
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || fail 'Docker Engine is not installed'
-docker compose version >/dev/null 2>&1 || fail 'Docker Compose plugin is not installed'
-command -v openssl >/dev/null 2>&1 || fail 'openssl is not installed'
+docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is required'
 
-if [[ ! -f .env ]]; then
-  cp .env.example .env
-  chmod 600 .env
-  printf 'Created .env; customize LAN_ORIGINS and optional PUBLIC_ORIGIN before deployment.\n' >&2
-  exit 2
+# Upgrade migration: previous v0.4 builds mounted the Fernet key as a Docker secret.
+# Carry it into /data before recreating the container so previously enrolled TOTP
+# secrets remain decryptable. Never replace an existing key.
+legacy_container="$(docker compose ps -q switchyard 2>/dev/null || true)"
+if [[ -n "$legacy_container" ]] && docker exec "$legacy_container" test -s /run/secrets/mfa_key 2>/dev/null; then
+  echo 'Migrating existing MFA key from legacy Docker secret into persistent /data.'
+  docker exec "$legacy_container" /opt/venv/bin/python -c '
+from pathlib import Path
+import os
+old=Path("/run/secrets/mfa_key")
+new=Path("/data/mfa.key")
+if not new.exists():
+    with os.fdopen(os.open(str(new), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as file:
+        file.write(old.read_bytes().strip())
+    print("MFA encryption key migrated without replacement")
+' || fail 'Could not migrate existing MFA key; old container left running'
 fi
 
-# LAN works without a public URL. A configured public URL MUST use HTTPS.
-origin="$(sed -n 's/^PUBLIC_ORIGIN=//p' .env | tail -n 1)"
-secure="$(sed -n 's/^COOKIE_SECURE=//p' .env | tail -n 1)"
-if [[ -n "$origin" ]]; then
-  [[ "$origin" =~ ^https://[^/[:space:]]+$ ]] || fail 'PUBLIC_ORIGIN must be an HTTPS origin without path'
-  [[ "$origin" != 'https://switchyard.example.net' ]] || fail 'Set a real remote PUBLIC_ORIGIN or leave it empty for LAN-only use'
-  [[ "$secure" == 'true' ]] || fail 'COOKIE_SECURE must remain true for remote HTTPS'
-fi
-
-mkdir -p secrets
-chmod 700 secrets
-if [[ ! -s secrets/admin_password.txt ]]; then
-  umask 077
-  openssl rand -base64 36 > secrets/admin_password.txt
-  chmod 600 secrets/admin_password.txt
-  printf 'Generated one-time bootstrap admin password at secrets/admin_password.txt\n'
-fi
-
-if [[ ! -s secrets/mfa_key.txt ]]; then
-  if [[ -e secrets/mfa_key.txt ]]; then fail 'MFA key file exists but is empty'; fi
-  umask 077
-  # Valid Fernet key (32 random bytes, URL-safe base64).
-  openssl rand 32 | openssl base64 -A | tr '+/' '-_' > secrets/mfa_key.txt
-  chmod 600 secrets/mfa_key.txt
-  printf 'Generated persistent TOTP encryption key at secrets/mfa_key.txt\n'
+# The legacy .env and secrets files are not used by the new Compose file.
+# Do not delete automatically: they may be needed for external rollback.
+if [[ -f .env || -d secrets ]]; then
+  printf 'Note: old .env/secrets files are obsolete; securely remove them after validating upgrade.\n'
 fi
 
 docker compose config --quiet
 docker compose build --pull
 docker compose up -d --wait
 docker compose ps
-printf '\nDeployed. LAN: http://YOUR-DOCKER-HOST-LAN-IP:9791\n'
-if [[ -n "$origin" ]]; then printf 'Remote HTTPS origin: %s (TOTP required)\n' "$origin"; fi
-printf 'Host health: curl --fail http://127.0.0.1:9791/healthz\n'
-printf 'Run ./scripts/smoke-test.sh after verifying the host-bound address.\n'
+printf '\nSwitchyard LAN: http://DOCKER-HOST-IP:9791\n'
+if docker compose logs --no-color switchyard | grep -q 'SWITCHYARD FIRST-RUN CLAIM CODE:'; then
+  printf 'First installation: get your one-time claim code with:\n  docker compose logs switchyard\n'
+  printf 'Enter the code in the browser setup wizard, set your admin password and save proxy settings there.\n'
+fi
+printf 'Optional verification: ./scripts/smoke-test.sh\n'

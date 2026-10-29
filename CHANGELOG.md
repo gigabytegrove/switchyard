@@ -1,5 +1,16 @@
 # Switchyard changes
 
+## 0.5.0-dev.1 — container-owned first-run configuration and LAN/proxy policy (2026-10-28)
+
+- Replace `.env`, external admin secrets, MFA key mounts and Compose variable interpolation with a first-run web wizard protected by a one-time log-only claim code.
+- Store admin account, allowed LAN DNS browser origins and exact HTTPS reverse-proxy hostname in the persistent SQLite database; automatically maintain `/data/mfa.key` with restricted permissions.
+- Make LAN binding `0.0.0.0:9791` without SSH tunneling; require password on LAN, MFA on the configured public HTTPS hostname, including terminal/desktop WebSocket checks.
+- Add authenticated LAN-only network settings editor requiring admin password, applying changes without restart and revoking other sessions.
+- Migrate preexisting Docker-secret MFA key from running old container before Compose recreation; fail closed when previously enrolled key material is missing.
+- Include TOTP decryption key in sensitive backup ZIP for recovery, with manifest and clear warnings; continue excluding SSH private keys and Vaultwarden CLI cache.
+- Add repository README workflow badge, version, deployment, protocol, and status badges, new install/upgrade guidance, and quality tests.
+- Development release; no hardware/proxy end-to-end acceptance claimed.
+
 ## 0.4.0 — RDP, VNC and SPICE remote desktops (2026-10-28)
 
 - Private `guacd:1.6.0` gateway for RDP/VNC with authenticated WebSocket relay and packaged Guacamole browser client.

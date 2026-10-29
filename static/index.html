@@ -14,6 +14,42 @@
 </head>
 <body>
   <div id="toast" role="status" aria-live="polite"></div>
+  <main id="setup" class="login-layout hidden" aria-labelledby="setupTitle">
+    <section class="login-story">
+      <div class="wordmark"><span class="sigil">S<span>↗</span></span> SWITCHYARD</div>
+      <h1>Build your<br><em>control room.</em></h1>
+      <p>One-time setup lives inside your persistent Switchyard container. No .env files, external secrets, or manual configuration edits.</p>
+      <div class="login-bottom">INITIAL CONFIGURATION <span class="edition" id="setupProgress">01 / 03</span></div>
+    </section>
+    <section class="login-panel">
+      <form id="setupForm" class="login-form setup-form">
+        <span class="form-index">FIRST-RUN SETUP</span>
+        <div data-setup-step="0">
+          <h2 id="setupTitle">Claim your instance.</h2>
+          <p>Get the one-time claim code from the Docker host: <code>docker compose logs switchyard</code>. Never share this code.</p>
+          <label for="setupCode">Container claim code</label><input id="setupCode" autocomplete="off" spellcheck="false" required maxlength="64" placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX">
+          <label for="setupUsername">Administrator username</label><input id="setupUsername" autocomplete="username" required minlength="3" maxlength="80" pattern="[A-Za-z0-9_.-]+" value="admin">
+          <label for="setupPassword">Administrator password (minimum 14 characters)</label><input id="setupPassword" type="password" autocomplete="new-password" minlength="14" maxlength="4096" required>
+          <label for="setupConfirm">Confirm administrator password</label><input id="setupConfirm" type="password" autocomplete="new-password" minlength="14" required>
+        </div>
+        <div data-setup-step="1" class="hidden">
+          <h2>Local connectivity.</h2><p>Switchyard already listens on all LAN interfaces on port 9791. IP-based access requires no additional settings.</p>
+          <label for="setupLanOrigins">Optional local DNS browser addresses (one per line)</label>
+          <textarea id="setupLanOrigins" rows="3" placeholder="http://switchyard.lan:9791
+http://ops.home.arpa:9791"></textarea>
+          <p class="settings-hint">Private IP URLs work automatically. Public DNS names cannot bypass external MFA.</p>
+        </div>
+        <div data-setup-step="2" class="hidden">
+          <h2>Remote access.</h2><p>Optionally save the HTTPS hostname used by Nginx Proxy Manager. Remote sessions will remain blocked until TOTP is enrolled in Settings.</p>
+          <label for="setupPublicOrigin">Public HTTPS origin (optional)</label><input id="setupPublicOrigin" type="url" placeholder="https://switchyard.example.com" autocomplete="url">
+          <p class="settings-hint">Use your real reverse-proxy hostname. TLS certificates and proxy routing are configured in the proxy; no direct WAN port forwarding.</p>
+          <p><strong>Configuration:</strong> persisted in /data/switchyard.sqlite3. Administrator password is stored as an Argon2id hash.</p>
+        </div>
+        <small id="setupError" class="form-error" role="alert"></small>
+        <div class="setup-actions"><button id="setupBack" class="action-quiet hidden" type="button">Back</button><button id="setupNext" class="action-primary" type="submit">Continue →</button></div>
+      </form>
+    </section>
+  </main>
   <main id="login" class="login-layout">
     <section class="login-story">
       <div class="wordmark"><span class="sigil">S<span>↗</span></span> SWITCHYARD</div>
@@ -128,6 +164,14 @@
       <form id="mfaSetupForm" class="panel-form"><label for="mfaSetupPassword">Current administrator password</label><input id="mfaSetupPassword" type="password" autocomplete="current-password" required><button type="submit" class="action-small">Start authenticator setup</button></form>
       <div id="mfaEnrollment" class="hidden"><p>Enter this key in your authenticator app. It expires in ten minutes. Do not share it.</p><code id="mfaSecret"></code><p><a id="mfaUri">Open authenticator app</a></p><form id="mfaEnableForm" class="panel-form"><label for="mfaEnableCode">Confirm 6-digit code</label><input id="mfaEnableCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required><button type="submit" class="action-primary">Enable MFA</button></form></div>
       <form id="mfaDisableForm" class="panel-form hidden"><h3>Disable MFA</h3><p>Remote sign-in will be blocked until MFA is configured again.</p><label for="mfaDisablePassword">Current password</label><input id="mfaDisablePassword" type="password" autocomplete="current-password" required><label for="mfaDisableCode">Current unused authenticator code</label><input id="mfaDisableCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required><button type="submit" class="action-quiet">Disable MFA</button></form></div>
+      <div class="settings-note"><h2>Browser and network access</h2><p>Stored in Switchyard's persistent internal database; changes apply immediately. LAN IPs work without manual configuration. Public HTTPS hostnames always require MFA.</p>
+      <form id="networkForm" class="panel-form settings-form">
+        <label for="networkLan">Additional LAN DNS origins (one per line)</label><textarea id="networkLan" rows="3" placeholder="http://switchyard.lan:9791"></textarea>
+        <label for="networkPublic">Public HTTPS reverse-proxy origin</label><input id="networkPublic" type="url" placeholder="https://switchyard.example.com">
+        <label class="check-line"><input type="checkbox" id="networkVaultHttp"> Allow HTTP Vaultwarden URLs (trusted LAN only; not recommended)</label>
+        <label for="networkPassword">Current administrator password (required to save)</label><input id="networkPassword" type="password" autocomplete="current-password" required>
+        <button type="submit" class="action-primary">Save access configuration</button>
+      </form></div>
       <div class="settings-note"><h2>Persistence</h2><p>SQLite assets, audit records, host trust and Bitwarden CLI state live in your persistent Docker volume under <code>/data</code>. Remote tmux sessions are maintained on each destination machine.</p><div class="form-actions"><button type="button" class="action-small" id="backupDownload">Download consistent backup</button></div><p>The backup contains a live SQLite snapshot and trusted host keys. Sessions, private SSH keys, Vaultwarden CLI cache and bootstrap secrets are intentionally excluded. Keep this file protected; it includes password hashes and asset metadata.</p></div></section>
     </main>
   </div>

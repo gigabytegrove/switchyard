@@ -13,16 +13,15 @@ from app.guac import DesktopSettings, ProtocolError, connection_options, frame, 
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
-    secret_file = tmp_path / 'bootstrap'; secret_file.write_text('development-credential-long-enough')
-    monkeypatch.setenv('ADMIN_PASSWORD_FILE', str(secret_file))
-    monkeypatch.setenv('PUBLIC_ORIGIN', 'http://testserver')
-    monkeypatch.setenv('COOKIE_SECURE', 'false')
-    monkeypatch.setattr(m, 'COOKIE_SECURE', False)
     monkeypatch.setattr(m, 'DATA', tmp_path / 'data')
     monkeypatch.setattr(m, 'DB_FILE', tmp_path / 'data' / 'switchyard.sqlite3')
     with desktops.GUARD:
         desktops.TICKETS.clear(); desktops.ACTIVE.clear(); desktops.SPICE_GROUPS.clear()
     with TestClient(m.app, base_url='http://testserver') as client:
+        response = client.post('/api/setup/complete', headers={'Host':'127.0.0.1:9791','Origin':'http://127.0.0.1:9791'}, json={
+          'claim_code':m.BOOTSTRAP_CODE,'username':'admin',
+          'password':'development-credential-long-enough', 'lan_origins':['http://testserver']})
+        assert response.status_code == 200, response.text
         yield client
     with desktops.GUARD:
         desktops.TICKETS.clear(); desktops.ACTIVE.clear(); desktops.SPICE_GROUPS.clear()

@@ -308,8 +308,8 @@ def resolve_settings(row: dict, payload: TicketInput, vault_password) -> Desktop
 
 
 async def connect_guacd():
-    return await asyncio.open_connection(os.getenv('GUACD_HOST','guacd'),
-                                         int(os.getenv('GUACD_PORT','4822')))
+    return await asyncio.open_connection('guacd',
+                                         4822)
 
 
 def install_desktops(app, dbconn, require_auth, session_from_ws, vault_password, audit):

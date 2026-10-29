@@ -70,3 +70,6 @@
 /* Private RDP/VNC gateway health stays visible above connection inventory. */
 .desktop-gateway-state {padding:.65rem 0; color:#263c36; font-size:.85rem; font-weight:600;}
 .desktop-gateway-error {color:#ad3e27;}
+
+/* First-run control-room wizard, retaining Switchyard editorial layout. */
+.setup-form{width:min(100%,480px)}.setup-form textarea,.settings-form textarea{font:inherit;width:100%;color:var(--ink);background:#fff;border:1px solid #b8c0b8;border-radius:3px;padding:12px;resize:vertical}.setup-form textarea:focus,.settings-form textarea:focus{outline:2px solid var(--fern);outline-offset:1px}.setup-form code{font-family:var(--mono);font-size:.9em;overflow-wrap:anywhere}.setup-form [data-setup-step]{display:flex;flex-direction:column;gap:12px}.setup-form [data-setup-step].hidden{display:none}.setup-form .settings-hint{font-size:13px;color:var(--muted)}.setup-actions{display:flex;gap:14px;justify-content:space-between}.setup-actions .action-primary{margin-left:auto}.setup-form .form-error{display:block}@media(max-width:700px){.setup-form{width:100%}.setup-actions{flex-wrap:wrap}}

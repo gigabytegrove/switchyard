@@ -44,12 +44,12 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : response;
 }
 function setLogin() {
-  $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden');
+  $('#setup').classList.add('hidden'); $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden');
   for (const tab of state.tabs.values()) tab.ws?.close();
   state.tabs.clear(); state.currentTab = null; closeAllDesktops();
 }
 async function setShell() {
-  $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
+  $('#setup').classList.add('hidden'); $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   await refreshAssets(); navigate('overview');
 }
 async function refreshAssets() {
@@ -70,7 +70,7 @@ function navigate(page) {
   if (page === 'vault') vaultStatus().catch(showError);
   if (page === 'trust') refreshHosts().catch(showError);
   if (page === 'keys') refreshKeys().catch(showError);
-  if (page === 'settings') refreshMfaStatus().catch(showError);
+  if (page === 'settings') { refreshMfaStatus().catch(showError); refreshNetwork().catch(showError); }
   if (page === 'activity') refreshAudit().catch(showError);
   if (page === 'terminals' && state.currentTab) requestAnimationFrame(() => state.tabs.get(state.currentTab)?.fit.fit());
 }
@@ -1062,10 +1062,78 @@ async function refreshMfaStatus() {
   if (state.enabled) $('#mfaEnrollment').classList.add('hidden');
 }
 
+let setupStep = 0;
+function showSetupStep(step) {
+  setupStep = step;
+  $$('[data-setup-step]').forEach(el => el.classList.toggle('hidden', Number(el.dataset.setupStep) !== step));
+  $('#setupProgress').textContent = `0${step + 1} / 03`;
+  $('#setupBack').classList.toggle('hidden', step === 0);
+  $('#setupNext').textContent = step === 2 ? 'Finish setup →' : 'Continue →';
+  $('#setupError').textContent = '';
+  // Hidden controls do not participate in HTML form constraint validation.
+  $$('[data-setup-step] input').forEach(input => { input.disabled = Number(input.closest('[data-setup-step]').dataset.setupStep) !== step; });
+}
+function setSetup() {
+  $('#login').classList.add('hidden'); $('#shell').classList.add('hidden');
+  $('#setup').classList.remove('hidden'); showSetupStep(0);
+  $('#setupCode').focus();
+}
+async function refreshNetwork() {
+  const settings = await api('/network');
+  $('#networkPublic').value = settings.public_origin || '';
+  $('#networkLan').value = (settings.lan_origins || []).join('\n');
+  $('#networkVaultHttp').checked = settings.allow_http_vault;
+}
+function aliases(value) { return value.split(/\r?\n/).map(x => x.trim()).filter(Boolean); }
+async function bootstrap() {
+  try {
+    const setup = await api('/setup/status');
+    if (setup.setup_required) { setSetup(); return; }
+    try { await api('/me'); await setShell(); } catch { setLogin(); }
+  } catch (error) {
+    setLogin(); showError(error);
+  }
+}
+
 function safeAsync(fn) { return event => { Promise.resolve(fn(event)).catch(showError); }; }
 function bind() {
   bindDesktopUI();
   $('#clock').textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  $('#setupBack').addEventListener('click', () => showSetupStep(Math.max(0, setupStep - 1)));
+  $('#setupForm').addEventListener('submit', safeAsync(async event => {
+    event.preventDefault();
+    const form = $('#setupForm');
+    if (!form.reportValidity()) return;
+    if (setupStep === 0 && $('#setupPassword').value !== $('#setupConfirm').value) {
+      $('#setupError').textContent = 'Administrator passwords do not match.'; return;
+    }
+    if (setupStep < 2) { showSetupStep(setupStep + 1); return; }
+    const next = $('#setupNext'); next.disabled = true;
+    $('#setupError').textContent = '';
+    try {
+      await api('/setup/complete', {method:'POST', body:{
+        claim_code:$('#setupCode').value.trim(),username:$('#setupUsername').value.trim(),
+        password:$('#setupPassword').value, lan_origins:aliases($('#setupLanOrigins').value),
+        public_origin:$('#setupPublicOrigin').value.trim()
+      }});
+      $('#loginUsername').value = $('#setupUsername').value.trim();
+      $('#setupCode').value = ''; $('#setupPassword').value = ''; $('#setupConfirm').value = '';
+      setLogin(); toast('Setup complete. Sign in with your administrator account.');
+    } catch(error) { $('#setupError').textContent = error.message; }
+    finally { next.disabled = false; }
+  }));
+  $('#networkForm').addEventListener('submit', safeAsync(async event => {
+    event.preventDefault();
+    const input = $('#networkPassword');
+    const save = $('#networkForm button[type="submit"]'); save.disabled = true;
+    try {
+      await api('/network', {method:'PUT', body:{ current_password:input.value,
+        lan_origins:aliases($('#networkLan').value), public_origin:$('#networkPublic').value.trim(),
+        allow_http_vault:$('#networkVaultHttp').checked }});
+      input.value = ''; toast('Network settings saved in Switchyard persistent storage.');
+      await refreshNetwork();
+    } finally { save.disabled = false; }
+  }));
   $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value, totp: $('#loginTotp').value.trim() } }); $('#loginPassword').value = ''; $('#loginTotp').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
   $$('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
   $$('[data-action="new-asset"]').forEach(b => b.addEventListener('click', () => openAsset()));
@@ -1164,6 +1232,6 @@ function bind() {
   }));
   $('#passwordForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); await api('/password', { method: 'POST', body: { current_password: $('#currentPassword').value, new_password: $('#newPassword').value } }); event.target.reset(); toast('Administrator password changed.'); }));
   window.addEventListener('resize', () => { if (state.page === 'terminals' && state.currentTab) state.tabs.get(state.currentTab)?.fit.fit(); });
-  api('/me').then(setShell).catch(() => setLogin());
+  bootstrap();
 }
 window.addEventListener('DOMContentLoaded', bind);

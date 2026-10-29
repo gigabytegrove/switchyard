@@ -18,12 +18,14 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
-      - name: Backend test suite
+      - name: Backend and setup wizard regression suite
         run: python -m pytest -q
-      - name: Frontend syntax checks
+      - name: Frontend and deployment script checks
         run: |
           node --check static/app.js
           node --check static/spice-view.js
+          bash -n scripts/deploy.sh scripts/smoke-test.sh
+          ! grep -Eq 'ADMIN_PASSWORD_FILE|MFA_KEY_FILE|PUBLIC_ORIGIN|LAN_ORIGINS|ALLOW_HTTP_VAULT' compose.yaml
   image-build:
     runs-on: ubuntu-24.04
     needs: source-tests
@@ -33,24 +35,39 @@ jobs:
         run: docker build --pull --tag switchyard:test .
       - name: Check image includes mandatory runtime assets
         run: docker run --rm --entrypoint /bin/bash switchyard:test /usr/local/bin/verify-runtime-assets /app/static
-      - name: Start disposable Compose installation and exercise HTTP routes
+      - name: Start disposable zero-configuration Compose deployment
         run: |
-          docker tag switchyard:test switchyard:0.4.0
-          mkdir -p secrets
-          printf '%s\n' 'github-actions-disposable-ci-password' > secrets/admin_password.txt
-          chmod 600 secrets/admin_password.txt
-          openssl rand 32 | openssl base64 -A | tr '+/' '-_' > secrets/mfa_key.txt
-          chmod 600 secrets/mfa_key.txt
-          printf 'PUBLIC_ORIGIN=http://127.0.0.1:9791\nCOOKIE_SECURE=false\nSWITCHYARD_BIND=127.0.0.1\n' > .env
-          docker compose up -d --no-build
-          for attempt in $(seq 1 45); do
-            if curl --fail --silent --max-time 3 http://127.0.0.1:9791/healthz >/dev/null; then break; fi
-            sleep 2
-          done
-          curl --fail --show-error --max-time 6 http://127.0.0.1:9791/healthz
-          test "$(docker inspect --format '{{.State.Running}}' "$(docker compose ps -q guacd)")" = true
-          docker compose ps
+          docker tag switchyard:test switchyard:0.5.0-dev.1
+          test ! -e .env
+          test ! -e secrets
+          docker compose up -d --no-build --wait
           bash scripts/smoke-test.sh
+      - name: Exercise first-run wizard and authenticated API via HTTP
+        run: |
+          python3 - <<'PY'
+          import json, re, subprocess, urllib.request, urllib.error
+          base='http://127.0.0.1:9791'
+          log=subprocess.check_output(['docker','compose','logs','--no-color','switchyard'],text=True)
+          code=re.search(r'SWITCHYARD FIRST-RUN CLAIM CODE: ([A-F0-9-]{26})',log)
+          assert code is not None, 'first boot must display claim code'
+          def request(path,method='GET',data=None,cookie=''):
+              req=urllib.request.Request(base+path,method=method,headers={
+                  'Origin':base,'Content-Type':'application/json',
+                  **({'Cookie':cookie} if cookie else {})},
+                  data=json.dumps(data).encode() if data is not None else None)
+              return urllib.request.urlopen(req,timeout=10)
+          assert request('/api/setup/status').read().find(b'true')!=-1
+          with request('/api/setup/complete','POST',{
+              'claim_code':code.group(1),'username':'ci-admin',
+              'password':'ci-disposable-development-password-2026'}) as resp:
+              assert resp.status==200
+          assert json.loads(request('/api/setup/status').read())['setup_required'] is False
+          with request('/api/login','POST',{'username':'ci-admin','password':'ci-disposable-development-password-2026'}) as resp:
+              cookie=resp.headers['Set-Cookie'].split(';',1)[0]
+          assert json.loads(request('/api/me',cookie=cookie).read())['username']=='ci-admin'
+          assert json.loads(request('/api/network',cookie=cookie).read())['lan_origins']==[]
+          print('PASS: clean first boot, claim code, account setup, login, and persistent network configuration')
+          PY
       - name: Capture Compose logs on failure
         if: failure()
         run: docker compose logs --tail=200 || true

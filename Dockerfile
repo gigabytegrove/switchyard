@@ -4,7 +4,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \
-    SWITCHYARD_DATA=/data \
     HOME=/data
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -45,17 +44,7 @@ PYGUAC
 COPY app/ /app/app/
 COPY static/ /app/static/
 # Distribution-provided, version-pinned LGPLv3 SPICE HTML5 client.
-RUN set -eu; \
-    mkdir -p /app/static/spice; \
-    source_file="$(dpkg -L spice-html5 | grep '/main\.js$' | head -n 1)"; \
-    css_file="$(dpkg -L spice-html5 | grep '/spice\.css$' | head -n 1)"; \
-    if [ -z "$source_file" ] || [ -z "$css_file" ]; then \
-        dpkg -L spice-html5; \
-        echo 'SPICE HTML5 source files not found in installed package' >&2; \
-        exit 1; \
-    fi; \
-    cp -a "$(dirname "$source_file")/." /app/static/spice/; \
-    cp "$css_file" /app/static/spice/spice.css
+RUN mkdir -p /app/static/spice && cp -a /usr/share/spice-html5/src/. /app/static/spice/ && cp /usr/share/spice-html5/spice.css /app/static/spice/spice.css
 
 RUN cp /tmp/guacamole.js /app/static/guacamole.js \
     && cp /opt/ui/node_modules/@xterm/xterm/lib/xterm.js /app/static/xterm.js \

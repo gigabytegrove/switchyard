@@ -25,19 +25,15 @@ def otp(secret: str, tick: int | None = None) -> str:
 
 @pytest.fixture
 def configured(monkeypatch, tmp_path):
-    key = tmp_path / 'mfa-key'
-    key.write_bytes(Fernet.generate_key())
-    pw = tmp_path / 'password'
-    pw.write_text(PASS)
-    monkeypatch.setenv('MFA_KEY_FILE', str(key))
-    monkeypatch.setenv('ADMIN_PASSWORD_FILE', str(pw))
-    monkeypatch.setenv('PUBLIC_ORIGIN', REMOTE)
-    monkeypatch.setenv('LAN_ORIGINS', 'http://switchyard.lan:9791')
     monkeypatch.setattr(m, 'DATA', tmp_path / 'data')
     monkeypatch.setattr(m, 'DB_FILE', tmp_path / 'data' / 'switchyard.sqlite3')
     with m.LOCK:
         m.FAILED.clear()
     with TestClient(m.app, base_url=LAN) as client:
+        response = client.post('/api/setup/complete', headers={'Origin':LAN}, json={
+          'claim_code':m.BOOTSTRAP_CODE,'username':'admin','password':PASS,
+          'public_origin':REMOTE,'lan_origins':['http://switchyard.lan:9791']})
+        assert response.status_code == 200, response.text
         yield client
 
 
@@ -100,8 +96,14 @@ def test_origin_rejection_and_private_ip_auto_detect(configured):
 
 def test_missing_mfa_key_blocks_enrollment(configured, monkeypatch):
     assert login(configured, LAN).status_code == 200
-    monkeypatch.delenv('MFA_KEY_FILE')
-    assert configured.post('/api/mfa/setup', headers={'origin': LAN}, json={'password': PASS}).status_code == 503
+    response = configured.post('/api/mfa/setup', headers={'origin': LAN}, json={'password': PASS})
+    assert response.status_code == 200
+    key = m.DATA / 'mfa.key'
+    assert key.is_file() and key.stat().st_mode & 0o777 == 0o600
+    key.unlink()
+    # Replacing the encryption key cannot decrypt the already-persisted enrollment.
+    assert configured.post('/api/mfa/enable', headers={'origin': LAN},
+                           json={'code':otp(response.json()['secret'])}).status_code == 503
 
 
 def test_schema_upgrade_preserves_old_sessions_and_password(configured):

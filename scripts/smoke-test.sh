@@ -20,10 +20,11 @@ check_http() {
 }
 
 check_http /healthz 'health endpoint responds'
-grep -Eq '"version"[[:space:]]*:[[:space:]]*"0\.4\.0"' "$TEMP/response" || {
+grep -Eq '"version"[[:space:]]*:[[:space:]]*"0\.5\.0-dev\.1"' "$TEMP/response" || {
   echo 'FAIL: running version is not 0.4.0' >&2; exit 1;
 }
 check_http / 'Switchyard UI responds'
+check_http /api/setup/status 'Setup status endpoint responds'
 grep -q 'SWITCHYARD' "$TEMP/response" || { echo 'FAIL: expected UI shell missing' >&2; exit 1; }
 check_http /static/guacamole.js 'Guacamole browser runtime is packaged'
 check_http /static/spice/main.js 'SPICE HTML5 browser runtime is packaged'
@@ -38,15 +39,10 @@ echo 'PASS: desktop API rejects unauthenticated access'
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   docker compose config --quiet
   echo 'PASS: Docker Compose config resolves'
-  # EXPOSE 4822/tcp is an internal container port, not a published host port.
-  # docker compose port may succeed even when no host binding exists.
-  guacd_id="$(docker compose ps -q guacd)"
-  [[ -n "$guacd_id" ]] || { echo 'FAIL: guacd container is missing' >&2; exit 1; }
-  guacd_bindings="$(docker inspect --format '{{json .HostConfig.PortBindings}}' "$guacd_id")"
-  if [[ "$guacd_bindings" != "{}" && "$guacd_bindings" != "null" ]]; then
-    echo "FAIL: private guacd service has published host ports: $guacd_bindings" >&2
-    exit 1
+  # guacd must not have a published host port.
+  if docker compose port guacd 4822 >/dev/null 2>&1; then
+    echo 'FAIL: private guacd service has a published port' >&2; exit 1
   fi
   echo 'PASS: guacd has no published host port'
 fi
-echo 'PASS: non-destructive Switchyard v0.4.0 smoke checks complete'
+echo 'PASS: non-destructive Switchyard v0.5.0-dev.1 smoke checks complete'
