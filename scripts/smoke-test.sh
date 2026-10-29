@@ -20,8 +20,8 @@ check_http() {
 }
 
 check_http /healthz 'health endpoint responds'
-grep -Eq '"version"[[:space:]]*:[[:space:]]*"0\.5\.0-dev\.1"' "$TEMP/response" || {
-  echo 'FAIL: running version is not 0.4.0' >&2; exit 1;
+grep -Eq '"version"[[:space:]]*:[[:space:]]*"0\.5\.0-dev\.2"' "$TEMP/response" || {
+  echo 'FAIL: running version is not 0.5.0-dev.2' >&2; exit 1;
 }
 check_http / 'Switchyard UI responds'
 grep -q 'SWITCHYARD' "$TEMP/response" || { echo 'FAIL: expected UI shell missing' >&2; exit 1; }
