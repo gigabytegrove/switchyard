@@ -8,7 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_private_guacamole_network_and_no_privileged_socket():
     compose = (ROOT / 'compose.yaml').read_text()
     assert re.search(r'^  guacd:\s*$', compose, re.M)
-    assert 'guacamole/guacd:1.6.0' in compose
+    assert 'ghcr.io/quenchworks/images/guacd@sha256:caf62c36625a2ffb3adfc2bcc51572ab4e7f5e805ae3b55f3800812eeaf3c411' in compose
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.0-dev.1' in compose
+    assert not re.search(r'^\s+build:', compose, re.M), 'raw Compose must not require source code'
     assert 'remote_access:\n    internal: true' in compose
     assert 'GUACD_HOST:' not in compose
     assert 'environment:' not in compose
