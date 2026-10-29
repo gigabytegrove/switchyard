@@ -21,11 +21,11 @@ check_http() {
 
 check_http /healthz 'health endpoint responds'
 grep -Eq '"version"[[:space:]]*:[[:space:]]*"0\.5\.0-dev\.1"' "$TEMP/response" || {
-  echo 'FAIL: running version is not 0.4.0' >&2; exit 1;
+  echo 'FAIL: running version is not 0.5.0-dev.1' >&2; exit 1;
 }
 check_http / 'Switchyard UI responds'
-check_http /api/setup/status 'Setup status endpoint responds'
 grep -q 'SWITCHYARD' "$TEMP/response" || { echo 'FAIL: expected UI shell missing' >&2; exit 1; }
+check_http /api/setup/status 'Setup status endpoint responds'
 check_http /static/guacamole.js 'Guacamole browser runtime is packaged'
 check_http /static/spice/main.js 'SPICE HTML5 browser runtime is packaged'
 check_http /static/spice-view.html 'SPICE viewer responds'
