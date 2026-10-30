@@ -715,7 +715,7 @@ dialog.editor-dialog .command-input{min-height:240px;height:48dvh}
 #shell.session-focus .workbench-terminal .terminal-hint{display:none!important}
 /* Keep the two-pane desk usable on laptops; on phones the Machines
    drawer overlays the connection rather than squeezing a 360px screen. */
-@media(max-width:860px){
+@media(max-width:760px){
   #shell .station-menu-button{
     display:flex!important;order:1;
     width:30px;min-width:30px;

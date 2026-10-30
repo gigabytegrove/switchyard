@@ -54,7 +54,7 @@ def test_workspace_routes_are_preserved():
     assert "connect(a.id,{newSession:true})" in JS
 
 def test_accessibility_and_responsive_behaviors():
-    for size in (860,760,620,390):
+    for size in (980,760,620,390):
         assert f'@media(max-width:{size}px)' in CSS
     assert 'prefers-reduced-motion:reduce' in CSS
     assert ':focus-visible' in CSS
