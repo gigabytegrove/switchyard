@@ -99,8 +99,26 @@ def run():
             if not endpoint.exists():
                 raise RuntimeError("Browser CDP port not available")
             port = endpoint.read_text().splitlines()[0]
-            with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=4) as response:
-                pages = json.load(response)
+            # Chromium may publish DevToolsActivePort before its HTTP endpoint
+            # accepts requests on a busy GitHub-hosted runner. Retry readiness
+            # rather than treating an early socket timeout as a UI failure.
+            pages = None
+            last_error = None
+            ready_deadline = time.monotonic() + 25
+            while time.monotonic() < ready_deadline:
+                if process.poll() is not None:
+                    raise RuntimeError(f"Chromium exited before CDP was ready: {process.returncode}")
+                try:
+                    with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as response:
+                        candidate = json.load(response)
+                    if isinstance(candidate, list) and any(item.get("type") == "page" for item in candidate):
+                        pages = candidate
+                        break
+                except (OSError, ValueError, TimeoutError) as error:
+                    last_error = error
+                time.sleep(0.35)
+            if pages is None:
+                raise RuntimeError(f"Chromium DevTools HTTP did not become ready: {last_error}")
             page = next(item for item in pages if item.get("type") == "page")
             with connect(page["webSocketDebuggerUrl"], open_timeout=5) as socket:
                 cdp = CDP(socket)
