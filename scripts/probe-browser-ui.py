@@ -122,13 +122,10 @@ def run():
                 })()""")
                 started = time.monotonic()
                 cdp.until("""!!document.querySelector('#shell:not(.hidden)') &&
-                  !!document.querySelector('#page-machines:not(.hidden)') &&
-                  document.getElementById('machineDirectory').textContent.length>0""",
-                          "SwitchYard compact directory home")
-                print(f"PASS: login -> SwitchYard compact machine directory in {time.monotonic()-started:.2f}s",flush=True)
-
-                # Seed a disposable, reserved-address machine through the real
-                # authenticated API. Never attempt a connection to that address.
+                  !!document.querySelector('#page-machine:not(.hidden)') &&
+                  document.getElementById('machineSwitcher')""",
+                          "default two-pane Machines + Connections workbench")
+                print(f"PASS: login -> two-pane workbench in {time.monotonic()-started:.2f}s",flush=True)
                 record = cdp.eval("""(async function(){
                     const created=await api('/assets',{method:'POST',body:{
                       label:'QA relay station',host:'192.0.2.48',port:22,
@@ -137,98 +134,100 @@ def run():
                       use_tmux:true,note:'CI-only demo record'
                     }});
                     await refreshAssets();
-                    return {id:created.id,rows:document.querySelectorAll('.machine-entry').length};
+                    return {id:created.id,rows:document.querySelectorAll('#machineSwitcher .tree-machine-row').length};
                 })()""")
                 assert record["id"] and record["rows"] >= 1, record
                 assert cdp.eval("""(function(){
                   return getComputedStyle(document.querySelector('.station-header')).backgroundColor==='rgb(39, 39, 43)' &&
-                    getComputedStyle(document.querySelector('.directory-hero')).backgroundColor==='rgb(39, 39, 43)' &&
                     !!document.querySelector('.station-brand-mark[src="/static/switchyard-mark.webp"]') &&
-                    document.getElementById('stationVersion').textContent.includes('0.5.8-dev.1') &&
-                    !document.querySelector('.sidebar');
-                })()"""), "not the unique Station 02 UI (wrong image, CSS or cached shell)"
+                    document.getElementById('stationVersion').textContent.includes('0.5.9-dev.1') &&
+                    !document.getElementById('page-machines') &&
+                    !document.querySelector('.directory-hero');
+                })()"""), "wrong version, branding, or obsolete landing page"
 
                 for width in (1440, 1024, 840, 620, 360):
                     cdp.call("Emulation.setDeviceMetricsOverride", width=width,
                              height=900, deviceScaleFactor=1, mobile=False)
+                    # The left column is docked on desktop, off-canvas on mobile.
+                    if width > 760:
+                        cdp.eval("setMachineTreeOpen(true)")
+                    else:
+                        cdp.eval("setMachineTreeOpen(false)")
                     result = cdp.eval("""(function(){
-                      const $=s=>document.querySelector(s);
-                      const bounds=el=>{const r=el.getBoundingClientRect();
-                        return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
+                      const r=s=>{const x=document.querySelector(s).getBoundingClientRect();
+                        return {x:x.x,y:x.y,width:x.width,height:x.height,right:x.right};};
                       return {
                         viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,
-                        header:bounds($('.station-header')),hero:bounds($('.directory-hero')),
-                        roster:bounds($('#machineDirectory')),
+                        header:r('.station-header'),
+                        machines:r('.machine-context'),
+                        stage:r('.machine-work-area'),
+                        splitter:r('#machineRailResize'),
                         visible:document.querySelectorAll('.page:not(.hidden)').length,
-                        entryCount:document.querySelectorAll('.machine-entry').length,
-                        mobileNavigation:getComputedStyle($('#navMobileToggle')).display!=='none'
+                        entryCount:document.querySelectorAll('#machineSwitcher .tree-machine-row').length,
+                        focused:document.getElementById('shell').classList.contains('session-focus'),
+                        navInline:getComputedStyle(document.querySelector('.station-navigation')).position==='static',
+                        sidebarVisible:getComputedStyle(document.querySelector('.machine-context')).visibility==='visible'
                       };
                     })()""")
-                    assert result["viewport"]==width, result
-                    assert result["scrollWidth"] <= width+3, result
-                    assert result["header"]["width"] >= width-3, result
-                    assert result["hero"]["width"] >= width-3, result
-                    assert result["roster"]["width"] >= max(width*0.88, width-160), result
-                    assert result["visible"]==1 and result["entryCount"]>=1, result
-                    assert result["mobileNavigation"] is True, result
-                    cdp.screenshot(width)
-                    print(f"PASS Station 02 roster at {width}px ({result['entryCount']} machines)",flush=True)
+                    assert result["viewport"]==width,result
+                    assert result["scrollWidth"] <= width+3,result
+                    assert result["header"]["height"]<=42,result
+                    assert result["header"]["width"]>=width-3,result
+                    assert result["visible"]==1 and result["entryCount"]>=1,result
+                    assert result["stage"]["height"]>=850,result
+                    if width>760:
+                        assert result["navInline"],result
+                        assert result["sidebarVisible"],result
+                        assert result["machines"]["width"]>=183,result
+                        assert abs(result["machines"]["right"]+result["splitter"]["width"]-
+                                   result["stage"]["x"])<=5,result
+                        assert result["stage"]["right"]>=width-2,result
+                        assert result["stage"]["width"]>=width-450,result
+                    else:
+                        assert result["machines"]["right"]<=1,result
+                        assert result["stage"]["width"]>=width-3,result
+                    cdp.screenshot(f"{width}-two-pane-workbench")
+                    print(f"PASS two-pane workbench at {width}px; right stage {result['stage']['width']:.0f}px",flush=True)
 
+                # Selecting a host only changes the right connection window.
+                cdp.call("Emulation.setDeviceMetricsOverride",
+                         width=1440,height=900,deviceScaleFactor=1,mobile=False)
+                assert cdp.eval("""(function(){
+                  openMachine('192.0.2.48');
+                  return !!document.querySelector('#page-machine:not(.hidden)') &&
+                    !!document.querySelector('#machineLayout.tree-open') &&
+                    document.getElementById('machineTitle').textContent.includes('QA relay station') &&
+                    document.getElementById('machineSwitcher').children.length>0;
+                })()"""), "host selection removed Machines panel or failed to update connection"
+                assert cdp.eval("""(function(){
+                  document.getElementById('machineTreeToggle').click();
+                  const collapsed=!document.getElementById('machineLayout').classList.contains('tree-open');
+                  document.getElementById('machineTreeToggle').click();
+                  return collapsed && document.getElementById('machineLayout').classList.contains('tree-open');
+                })()"""), "Machines dock cannot collapse and reopen"
+                assert cdp.eval("""(function(){
+                  const search=document.getElementById('globalFind');
+                  search.click();
+                  return document.activeElement.id==='machineSwitchSearch' &&
+                    document.getElementById('machineLayout').classList.contains('tree-open');
+                })()"""), "top menu Find did not focus left Machines panel"
                 cdp.call("Emulation.setDeviceMetricsOverride",
                          width=360,height=900,deviceScaleFactor=1,mobile=False)
-                drawer = cdp.eval("""(function(){
-                  const nav=document.getElementById('navMobileToggle');
-                  const shell=document.getElementById('shell');
-                  nav.click();
-                  const open=shell.classList.contains('nav-open') &&
-                    nav.getAttribute('aria-expanded')==='true';
-                  document.getElementById('navDismiss').click();
-                  return open && !shell.classList.contains('nav-open') &&
-                    nav.getAttribute('aria-expanded')==='false';
-                })()""")
-                assert drawer, "mobile navigation drawer cannot open/close"
-
-                find = cdp.eval("""(function(){
-                  document.getElementById('globalFind').click();
-                  return document.activeElement.id==='machineSearch' &&
-                    !!document.querySelector('#page-machines:not(.hidden)');
-                })()""")
-                assert find, "global machine search should focus roster input"
-
-                # A machine opens an independent canvas, not a permanent
-                # two-column tree layout. All protocols remain available.
-                assert cdp.eval("""(function(){
-                  document.querySelector('.machine-entry-open').click();
-                  return !!document.querySelector('#page-machine:not(.hidden)') &&
-                    !!document.querySelector('#page-machines.hidden') &&
-                    document.querySelector('.machine-layout').children.length===3 &&
-                    !document.querySelector('.sidebar');
-                })()"""), "machine roster cannot open independent workbench"
-                result = cdp.eval("""(function(){
-                  const stage=document.querySelector('.workbench-stage').getBoundingClientRect();
-                  const layout=document.querySelector('.machine-layout').getBoundingClientRect();
-                  return {stageWidth:stage.width,layoutWidth:layout.width,
-                    stageHeight:stage.height};
-                })()""")
-                assert abs(result["stageWidth"]-result["layoutWidth"])<=4, result
-                assert result["stageHeight"]>=340, result
                 assert cdp.eval("""(function(){
                   const toggle=document.getElementById('machineTreeToggle');
                   toggle.click();
                   const opened=document.getElementById('machineLayout').classList.contains('tree-open');
                   document.getElementById('treeClose').click();
                   return opened && !document.getElementById('machineLayout').classList.contains('tree-open');
-                })()"""), "on-demand machine switcher does not open/close"
-                assert cdp.eval("""(function(){
-                  document.getElementById('machineBackToDirectory').click();
-                  return !!document.querySelector('#page-machines:not(.hidden)');
-                })()"""), "back to machine directory did not restore home"
-
+                })()"""), "mobile Machines drawer cannot open and close"
+                cdp.call("Emulation.setDeviceMetricsOverride",
+                         width=1440,height=900,deviceScaleFactor=1,mobile=False)
+                cdp.eval("setMachineTreeOpen(true)")
                 # A genuine xterm canvas, without connecting to any external
                 # SSH machine. This checks layout/fit; the separate SSH E2E
                 # suite checks the actual transport.
                 assert cdp.eval("""(function(){
-                  document.querySelector('.machine-entry-open').click();
+                  openMachine('192.0.2.48');
                   const asset=state.assets.find(a=>a.host==='192.0.2.48');
                   if(!asset||!window.Terminal||!window.FitAddon)return false;
                   const terminal=new window.Terminal({
@@ -267,12 +266,12 @@ def run():
                         horizontal:document.documentElement.scrollWidth
                       };
                     })()""")
-                    assert geometry['focus'] and geometry['headerHidden'] and geometry['tabsHidden'],geometry
+                    assert geometry['focus'] and not geometry['headerHidden'] and geometry['tabsHidden'],geometry
                     assert geometry['command']['height']<=40,geometry
-                    assert geometry['host']['width']>=width*0.94,geometry
-                    assert geometry['host']['height']>=geometry['height']*.90,geometry
-                    assert geometry['xterm']['width']>=width*.92,geometry
-                    assert geometry['xterm']['height']>=geometry['height']*.88,geometry
+                    assert geometry['host']['width']>= (width-450 if width>760 else width*.94),geometry
+                    assert geometry['host']['height']>=geometry['height']*.88,geometry
+                    assert geometry['xterm']['width']>= (width-460 if width>760 else width*.92),geometry
+                    assert geometry['xterm']['height']>=geometry['height']*.86,geometry
                     assert geometry['horizontal']<=width+3,geometry
                     cdp.screenshot(f"{width}-focused-terminal")
                     print(f"PASS focus {width}px: terminal {geometry['host']['width']:.0f}x{geometry['host']['height']:.0f}, "+ 
