@@ -657,7 +657,7 @@ function navigate(page) {
   state.page = page;
   $('#shell')?.classList.remove('nav-open');
   $('#navMobileToggle')?.setAttribute('aria-expanded','false');
-  $('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
+  $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page || (page === 'machine' && el.dataset.page === 'machines')));
   if (page === 'machine') {updateMachineHeader();renderWorkbenchSessions();}
   $('#bread').textContent = ({ machine:'Machine / ' + machineTitle(), machines:'Machines', overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', services: 'System services', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
