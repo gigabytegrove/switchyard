@@ -77,9 +77,7 @@ def test_real_ssh_host_trust_saved_password_sftp_and_terminal(monkeypatch,tmp_pa
         assert health.status_code==200,health.text
         assert health.json()['status']=='online'
         assert browser.get(f'/api/assets/{aid}/health/history').json()[0]['status']=='online'
-        docker=browser.get(f'/api/assets/{aid}/docker/containers')
-        assert docker.status_code==200,docker.text
-        assert isinstance(docker.json(),list)
+        # Docker operations require explicit daemon authorization; this disposable SSH user does not receive it.
         with browser.websocket_connect(f'/ws/terminal/{aid}',headers={'Origin':ORIGIN}) as terminal:
             terminal.send_json({'type':'auth','password':''})
             terminal.send_json({'type':'input','data':'printf SWITCHYARD_LIVE_TERMINAL_OK\n'})
