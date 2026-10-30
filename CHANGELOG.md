@@ -1,3 +1,13 @@
+## 0.5.3-dev.4 — stop replaying rejected SSH passwords
+
+- Fix endless SSH login failures caused by caching a rejected temporary password and silently reusing it during reconnect.
+- After an authentication rejection, the same terminal tab now explicitly prompts for a replacement password. It no longer traps users behind a stale encrypted saved credential.
+- Successful one-time override takes precedence over the stored password for the current login session; saving a replacement remains a deliberate edit-machine action.
+- Signal a distinct terminal-WebSocket authentication error and an explicit connected state. Suppress generic transport errors when an actionable SSH error has already arrived.
+- Invalidate rejected SSH passwords during SFTP, Docker and health API operations as well.
+- Add browser regression and real OpenSSH regression for bad saved password, successful supplied override, and typed WebSocket authentication failures.
+- Preserve the two-pane layout, existing machine records, trusted host keys, saved secrets and Docker volume; no migration.
+
 ## 0.5.3-dev.3 — real SSH/SFTP integration qualification
 
 - Fix actual Paramiko SFTP failures: exclusive-create mode `x` does not provide write access; use `wx` for both file upload and atomic editor staging. The previous mocked editor test failed to check the writable flag and has been corrected.

@@ -1559,6 +1559,7 @@ async def terminal(ws: WebSocket, aid: str):
         client = await asyncio.to_thread(ssh_client, asset, password)
         password = None
         channel = await asyncio.to_thread(client.invoke_shell, term='xterm-256color', width=100, height=30)
+        await ws.send_json({'type': 'connected'})
         if asset['use_tmux']:
             # Name consists solely of UUID characters (not user-provided shell input).
             channel.send('tmux new-session -A -s sy_' + aid.replace('-', '')[:18] + '\n')
@@ -1595,7 +1596,8 @@ async def terminal(ws: WebSocket, aid: str):
                 task.result()
     except HTTPException as error:
         try:
-            await ws.send_json({'type': 'error', 'message': str(error.detail)})
+            code = 'ssh_auth_rejected' if error.status_code == 502 and str(error.detail).startswith('SSH authentication rejected') else 'ssh_connection_error'
+            await ws.send_json({'type': 'error', 'code': code, 'message': str(error.detail)})
         except Exception:
             pass
         audit('terminal.error', aid, 'failed')

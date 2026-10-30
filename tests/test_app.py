@@ -270,7 +270,7 @@ def test_backup_wal_snapshot_without_sessions_or_secrets(client):
     with zipfile.ZipFile(io.BytesIO(result.content)) as z:
         assert sorted(z.namelist()) == ['known_hosts', 'manifest.json', 'switchyard.sqlite3']
         manifest = json.loads(z.read('manifest.json'))
-        assert manifest['version'] == '0.5.3-dev.3'
+        assert manifest['version'] == '0.5.3-dev.4'
         assert 'mfa.key' not in z.namelist()  # Not enrolled yet, so no key should be restored.
         dbdata = z.read('switchyard.sqlite3')
         assert hashlib.sha256(dbdata).hexdigest() == manifest['files']['switchyard.sqlite3']

@@ -60,7 +60,7 @@ def test_brand_assets_and_mobile_breakpoints():
 
 def test_deployment_preserves_externally_unconfigured_image():
     compose=(ROOT/'compose.yaml').read_text()
-    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.3-dev.3' in compose
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.3-dev.4' in compose
     assert 'container_name:' not in compose
     assert 'environment:' not in compose
     assert '.env' not in compose

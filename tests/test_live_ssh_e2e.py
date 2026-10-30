@@ -44,6 +44,18 @@ def test_real_ssh_host_trust_saved_password_sftp_and_terminal(monkeypatch,tmp_pa
         approved=browser.post('/api/hosts/trust',headers=headers,json={
           'host':'127.0.0.1','port':PORT,'key_type':key['key_type'],'public_key':key['public_key']})
         assert approved.status_code==200,approved.text
+        # A stale encrypted password must not force repeated failures: a fresh
+        # password supplied for this attempt must override the saved value.
+        with m.dbconn() as db:
+            m.put_saved_password(db,'ssh',aid,'definitely-wrong-stale-password')
+        with pytest.raises(HTTPException) as stale:
+            m.ssh_client(asset)
+        assert stale.value.status_code==502,stale.value.detail
+        overridden=m.ssh_client(asset,PASSWORD)
+        overridden.close()
+        # Restore the saved password for the remaining SFTP/health assertions.
+        with m.dbconn() as db:
+            m.put_saved_password(db,'ssh',aid,PASSWORD)
         ssh=m.ssh_client(asset)
         try:
             _,stdout,stderr=ssh.exec_command('printf SWITCHYARD_LIVE_SSH_OK')
@@ -78,6 +90,12 @@ def test_real_ssh_host_trust_saved_password_sftp_and_terminal(monkeypatch,tmp_pa
         assert health.json()['status']=='online'
         assert browser.get(f'/api/assets/{aid}/health/history').json()[0]['status']=='online'
         # Docker operations require explicit daemon authorization; this disposable SSH user does not receive it.
+        # Check that browser clients receive a precise, machine-readable auth
+        # rejection and can then reconnect with the correct password.
+        with browser.websocket_connect(f'ws://127.0.0.1:9791/ws/terminal/{aid}',headers={'Origin':ORIGIN}) as rejected_ws:
+            rejected_ws.send_json({'type':'auth','password':'not-the-ci-password'})
+            failed=rejected_ws.receive_json()
+            assert failed['type']=='error' and failed['code']=='ssh_auth_rejected',failed
         with browser.websocket_connect(f'ws://127.0.0.1:9791/ws/terminal/{aid}',headers={'Origin':ORIGIN}) as terminal:
             terminal.send_json({'type':'auth','password':''})
             terminal.send_json({'type':'input','data':'printf SWITCHYARD_LIVE_TERMINAL_OK\n'})

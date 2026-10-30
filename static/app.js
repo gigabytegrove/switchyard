@@ -1,7 +1,7 @@
 'use strict';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { page: 'machines', assets: [], folders: [], machineHost: null, tabs: new Map(), currentTab: null, editing: null, vaultItems: [], sessionPasswords: new Map() };
+const state = { page: 'machines', assets: [], folders: [], machineHost: null, tabs: new Map(), currentTab: null, editing: null, vaultItems: [], sessionPasswords: new Map(), failedAuthAssets: new Set() };
 let toastTimer;
 let dockerMode = 'containers';
 let activeFileEdit = null;
@@ -56,6 +56,8 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     const detail = typeof data.detail === 'string' ? data.detail : 'Request failed (' + response.status + ')';
+    const remoteAsset=/^\/assets\/([^/]+)\//.exec(path);
+    if(remoteAsset && detail.startsWith('SSH authentication rejected'))discardRejectedPassword(remoteAsset[1]);
     throw Error(detail);
   }
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : response;
@@ -87,16 +89,35 @@ function finishDialog(result) {
 async function confirmAction(title, description, action = 'Confirm') {
   return (await askDialog({ title, description, confirm: true, action })) !== null;
 }
-async function promptCredential(asset) {
-  if (!asset || asset.auth_type !== 'interactive' || asset.has_saved_password) return '';
-  const existing = state.sessionPasswords.get(asset.id);
-  if (existing !== undefined) return existing;
-  const password = await askDialog({title:'Connect to ' + asset.label,
-    description:`SSH password for ${asset.username}@${asset.host}. This is kept only in browser memory for this login session unless you save a password in the machine editor.`,
-    label:'SSH password', secret:true, required:false, action:'Continue'});
-  if (password !== null) state.sessionPasswords.set(asset.id, password);
+function discardRejectedPassword(aid) {
+  // Never automatically replay a password that SSH has rejected.
+  const key=String(aid);
+  state.sessionPasswords.delete(aid);
+  state.sessionPasswords.delete(key);
+  state.failedAuthAssets ??= new Set();
+  state.failedAuthAssets.add(key);
+}
+async function promptCredential(asset, {force=false}={}) {
+  if(!asset || asset.auth_type!=='interactive')return '';
+  const rejected=force || state.failedAuthAssets?.has(String(asset.id));
+  if(!rejected) {
+    // An accepted temporary override must win over an older saved password.
+    const cached=state.sessionPasswords.get(asset.id);
+    if(cached!==undefined)return cached;
+    if(asset.has_saved_password)return '';
+  }
+  const password=await askDialog({
+    title:rejected?'Retry SSH with another password':'Connect to '+asset.label,
+    description:rejected
+      ? 'The SSH server rejected the previous login for '+asset.username+'@'+asset.host+'. Enter a different password. You can replace the stored credential in Edit machine.'
+      : 'SSH password for '+asset.username+'@'+asset.host+'. It is held in browser memory until logout unless you save it in Edit machine.',
+    label:'SSH password',secret:true,required:!!rejected,
+    action:rejected?'Retry SSH connection':'Connect'
+  });
+  if(password!==null && password!=='')state.sessionPasswords.set(asset.id,password);
   return password;
 }
+
 function initMachineWorkspace() {
   for (const tab of ['terminals','desktops']) {
     const section = $('#page-' + tab), panel = $('#machinePanel-' + tab);
@@ -523,7 +544,7 @@ function updateTerminalStatus() {
   status.className = connected ? 'session-state connected' : connecting ? 'session-state connecting' : 'session-state';
   status.textContent = connected ? `${connected} connected` : connecting ? 'Connecting…' : sessions.length ? 'Disconnected' : 'No session';
   const connect = $('#machineTerminalConnect');
-  if (connect) connect.textContent = connected || connecting ? 'New session ↗' : sessions.length ? 'Reconnect ↗' : 'Connect via SSH ↗';
+  if (connect) connect.textContent = connected || connecting ? 'New session ↗' : sessions.some(t=>t.authFailed) ? 'Retry with password ↗' : sessions.length ? 'Reconnect ↗' : 'Connect via SSH ↗';
 }
 
 function openMachine(host){
@@ -598,7 +619,7 @@ async function refreshLoginOptions() {
 function setLogin() {
   $('#setup').classList.add('hidden'); $('#shell').classList.add('hidden'); $('#login').classList.remove('hidden');
   for (const tab of state.tabs.values()) tab.ws?.close();
-  state.tabs.clear(); state.currentTab = null; state.sessionPasswords.clear(); closeAllDesktops(); refreshLoginOptions();
+  state.tabs.clear(); state.currentTab = null; state.sessionPasswords.clear(); state.failedAuthAssets?.clear(); closeAllDesktops(); refreshLoginOptions();
 }
 async function setShell() {
   $('#setup').classList.add('hidden'); $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
@@ -701,16 +722,16 @@ async function removeAsset(asset) {
   if (!await confirmAction('Remove machine',`Delete ${asset.label}? Remote files will not be modified.`,'Delete machine')) return;
   await api('/assets/' + asset.id, { method: 'DELETE' }); await refreshAssets(); renderMachineDirectory(); toast('Connection removed.');
 }
-async function promptPassword(asset) { return promptCredential(asset); }
+async function promptPassword(asset, options={}) { return promptCredential(asset,options); }
 async function connect(aid, {newSession = false} = {}) {
   const asset = state.assets.find(a => String(a.id) === String(aid));
   if (!asset) { toast('Machine connection was not found.', true); return; }
   if (!window.Terminal || !window.FitAddon) { toast('Terminal assets are missing from the container.', true); return; }
   const matches = [...state.tabs.values()].filter(t => String(t.asset.id) === String(aid));
-  const active = matches.find(t => t.ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(t.ws.readyState));
+  const active = matches.find(t => !t.authFailed && t.ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(t.ws.readyState));
   if (active && !newSession) { selectTab(active.id); return active.id; }
-  const previous = newSession ? null : matches.find(t => !t.ws || t.ws.readyState === WebSocket.CLOSED);
-  let password = await promptPassword(asset);
+  const previous = newSession ? null : matches.find(t => t.authFailed || !t.ws || t.ws.readyState === WebSocket.CLOSED);
+  let password = await promptPassword(asset,{force:state.failedAuthAssets?.has(String(aid))});
   if (password === null) return null;
   let tab = previous;
   if (!tab) {
@@ -749,6 +770,7 @@ async function connect(aid, {newSession = false} = {}) {
     renderTabs();updateTerminalStatus();return tab.id;
   }
   tab.ws=ws;
+  tab.reportedServerError=false;
   tab.terminal.writeln('\r\nSwitchyard · connecting to '+asset.host);
   renderTabs();updateTerminalStatus();
   ws.onopen=()=>{
@@ -762,24 +784,38 @@ async function connect(aid, {newSession = false} = {}) {
     if(tab.ws!==ws)return;
     try{
       const message=JSON.parse(event.data);
-      if(message.type==='data')tab.terminal.write(message.data);
+      if(message.type==='connected') {
+        state.failedAuthAssets?.delete(String(asset.id));
+        tab.authFailed=false;
+        updateTerminalStatus();
+      } else if(message.type==='data')tab.terminal.write(message.data);
       else if(message.type==='error'){
+        tab.reportedServerError=true;
         const detail=typeof message.message==='string'?message.message:'SSH connection failed';
+        const rejected=message.code==='ssh_auth_rejected'||detail.startsWith('SSH authentication rejected');
+        if(rejected && asset.auth_type==='interactive'){
+          discardRejectedPassword(asset.id);
+          tab.authFailed=true;
+          tab.terminal.writeln('\r\n\x1b[33m[SSH password rejected; reconnect will prompt for another. To permanently replace a saved password, use Edit machine.]\x1b[0m');
+        }
         tab.terminal.writeln('\r\n\x1b[31m'+detail+'\x1b[0m');
-        toast(detail,true);
+        toast(rejected&&asset.auth_type==='interactive'?'SSH login rejected. Reconnect to enter another password.':detail,true);
+        renderTabs();updateTerminalStatus();
       }
     }catch{tab.terminal.writeln('\r\nUnexpected terminal message.');}
   };
   ws.onerror=()=>{
     if(tab.ws!==ws)return;
     password=null;
-    tab.terminal.writeln('\r\n\x1b[31mConnection failed. Review the machine and SSH host trust.\x1b[0m');
-    toast('Connection to '+asset.host+' failed. Review credentials and SSH host trust.',true);
+    // A server-side rejection is more useful than a generic WebSocket error.
+    if(tab.reportedServerError)return;
+    tab.terminal.writeln('\r\n\x1b[31mConnection transport failed. Check your network or reverse proxy.\x1b[0m');
+    toast('Connection transport failed for '+asset.host+'.',true);
   };
   ws.onclose=()=>{
     if(tab.ws!==ws)return;
     password=null;
-    tab.terminal.writeln('\r\n\x1b[90m[Disconnected — Reconnect will reuse this tab]\x1b[0m');
+    tab.terminal.writeln(tab.authFailed ? '\r\n\x1b[90m[Disconnected — reconnect to enter a different password]\x1b[0m' : '\r\n\x1b[90m[Disconnected — reconnect will reuse this tab]\x1b[0m');
     renderTabs();updateTerminalStatus();
   };
   return tab.id;
