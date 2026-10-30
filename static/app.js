@@ -925,6 +925,30 @@ function renderTabs() {
 }
 function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); updateMachineHeader(); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
 function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = [...state.tabs.keys()].find(k => normalizedHost(state.tabs.get(k).asset.host) === state.machineHost) || null; renderTabs(); updateTerminalStatus(); if (state.currentTab) selectTab(state.currentTab); else if (state.machineTab==='terminals') machineTab('overview'); }
+
+async function exportSSHInventory() {
+  await savePrivateDownload('/assets/export', 'switchyard-ssh-inventory.json');
+  toast('SSH inventory exported without passwords or private keys.');
+}
+async function importSSHInventory(event) {
+  const input=event.target, file=input.files?.[0];
+  if(!file)return;
+  try {
+    if(file.size>1024*1024)throw Error('SSH inventory exceeds the 1 MiB import limit.');
+    const inventory=JSON.parse(await file.text());
+    if(inventory?.format!=='switchyard-ssh-v1' || !Array.isArray(inventory.assets) || !Array.isArray(inventory.folders))
+      throw Error('Not a Switchyard SSH inventory export.');
+    if(inventory.assets.length>1000 || inventory.folders.length>300)
+      throw Error('SSH inventory exceeds the machine or folder limit.');
+    if(!await confirmAction('Import SSH inventory',
+      'Add '+inventory.assets.length+' SSH machines and '+inventory.folders.length+
+      ' folders? Existing entries will not be overwritten. Passwords and private keys are not imported.',
+      'Import machines'))return;
+    const result=await api('/assets/import',{method:'POST',body:inventory});
+    await refreshFolders();await refreshAssets();
+    toast('Imported '+result.assets_created+' machines and '+result.folders_created+' folders. Reconfigure credentials where required.');
+  }finally{input.value='';}
+}
 function renderFileSelect() {
   const select = $('#fileAsset'); const selected = select.value; select.replaceChildren(node('option', '', 'Select an asset'));
   for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; select.append(opt); }
@@ -1899,6 +1923,9 @@ function bind() {
   $('#logoutBtn').addEventListener('click', safeAsync(async () => { await api('/logout', { method: 'POST' }); setLogin(); }));
   $('#assetAuth').addEventListener('change', syncAuthFields);
   $('#assetSearch').addEventListener('input', renderAssets);
+  $('#sshExport').addEventListener('click', safeAsync(exportSSHInventory));
+  $('#sshImport').addEventListener('click', () => $('#sshImportFile').click());
+  $('#sshImportFile').addEventListener('change', safeAsync(importSSHInventory));
   $('#assetForm').addEventListener('submit', safeAsync(saveAsset));
   $('#closeAssetDialog').addEventListener('click', () => $('#assetDialog').close());
   $('#cancelAsset').addEventListener('click', () => $('#assetDialog').close());

@@ -270,7 +270,7 @@ def test_backup_wal_snapshot_without_sessions_or_secrets(client):
     with zipfile.ZipFile(io.BytesIO(result.content)) as z:
         assert sorted(z.namelist()) == ['known_hosts', 'manifest.json', 'switchyard.sqlite3']
         manifest = json.loads(z.read('manifest.json'))
-        assert manifest['version'] == '0.5.3-dev.6'
+        assert manifest['version'] == '0.5.4-dev.1'
         assert 'mfa.key' not in z.namelist()  # Not enrolled yet, so no key should be restored.
         dbdata = z.read('switchyard.sqlite3')
         assert hashlib.sha256(dbdata).hexdigest() == manifest['files']['switchyard.sqlite3']
@@ -590,3 +590,51 @@ def test_previous_release_schema_upgrade_preserves_existing_asset(client):
     m.init_data()
     assert m.fetch_asset(aid)['label']=='existing-data'
     assert client.get('/api/runbooks').json()==[]
+
+
+
+def test_ssh_inventory_export_import_redaction_and_transaction(client):
+    authenticate(client)
+    folder = client.post('/api/folders', json={'name': 'Migration group', 'parent_id': None})
+    assert folder.status_code == 201, folder.text
+    source = asset('Portable host')
+    source.update({'folder_id': folder.json()['id'], 'password': 'do-not-export-the-password'})
+    created = client.post('/api/assets', json=source)
+    assert created.status_code == 201, created.text
+    exported = client.get('/api/assets/export')
+    assert exported.status_code == 200
+    assert exported.headers['cache-control'] == 'no-store'
+    assert 'do-not-export-the-password' not in exported.text
+    inventory = exported.json()
+    assert inventory['format'] == 'switchyard-ssh-v1'
+    assert len(inventory['folders']) == len(inventory['assets']) == 1
+    assert 'password' not in inventory['assets'][0]
+    assert 'has_saved_password' not in inventory['assets'][0]
+    assert client.post('/api/assets/import', json=inventory).status_code == 409
+    assert len(client.get('/api/assets').json()) == 1
+    assert len(client.get('/api/folders').json()) == 1
+    injected = {**inventory, 'assets': [{**inventory['assets'][0], 'password': 'evil'}]}
+    assert client.post('/api/assets/import', json=injected).status_code == 422
+    assert client.delete('/api/assets/' + created.json()['id']).status_code == 200
+    assert client.delete('/api/folders/' + folder.json()['id']).status_code == 200
+    response = client.post('/api/assets/import', json=inventory)
+    assert response.status_code == 200, response.text
+    assert response.json()['assets_created'] == 1
+    assert response.json()['folders_created'] == 1
+    new_host = client.get('/api/assets').json()[0]
+    assert new_host['has_saved_password'] is False
+    assert new_host['folder_id'] == client.get('/api/folders').json()[0]['id']
+    assert new_host['folder_id'] != folder.json()['id']
+
+
+def test_ssh_inventory_rejects_folder_cycles_and_missing_references(client):
+    authenticate(client)
+    inventory = {'format': 'switchyard-ssh-v1',
+                 'folders': [{'id': 'a', 'name': 'One', 'parent_id': 'b'},
+                             {'id': 'b', 'name': 'Two', 'parent_id': 'a'}],
+                 'assets': []}
+    assert client.post('/api/assets/import', json=inventory).status_code == 422
+    inventory['folders'][1]['parent_id'] = None
+    inventory['assets'] = [{**asset(), 'folder_id': 'missing'}]
+    assert client.post('/api/assets/import', json=inventory).status_code == 422
+    assert client.get('/api/folders').json() == []

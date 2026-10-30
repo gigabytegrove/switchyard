@@ -38,7 +38,7 @@ docker compose ps
 
 **LAN browser compatibility:** Session IDs for SSH, RDP, VNC, and SPICE use `crypto.getRandomValues()`, which works over private-IP HTTP as well as HTTPS. Browser UUID availability is regression tested in Chromium over an simulated LAN browser constraints.
 
-**Machine navigation:** v0.5.3-dev.6 fixes a JavaScript crash when switching machines, Runbooks, or Files. The selector regression is exercised by an executable Node DOM test in CI.
+**Machine navigation:** v0.5.4-dev.1 fixes a JavaScript crash when switching machines, Runbooks, or Files. The selector regression is exercised by an executable Node DOM test in CI.
 
 **Operator workspace:** Resizable connection tree (196–440px) with remembered width; persisted collapsed folders; keyboard shortcuts Ctrl/Cmd+K and / for quick search; sorted folders and machines; narrow-screen slide-in directory with full-width terminal; session tabs indicate disconnected state. These are browser-only layout preferences, not server or credential configuration.
 
@@ -46,11 +46,11 @@ docker compose ps
 
 **Live protocol acceptance:** The CI source-test job now provisions an isolated OpenSSH server and checks actual SSH host verification, saved-password authentication, SFTP upload/download, and the WebSocket terminal. This does not substitute for Windows RDP, VNC, SPICE or Vaultwarden acceptance against your targets.
 
-**SSH password retry (v0.5.3-dev.6):** After a rejected login, Switchyard clears that attempt’s cached password and prompts for a new value in the **same SSH tab**. A successfully entered override is used for that login session, even when a saved encrypted password exists. To replace the saved value permanently, edit the machine. SSH protocol failures, host-key mismatches, and rejected credentials are reported separately.
+**SSH password retry (v0.5.4-dev.1):** After a rejected login, Switchyard clears that attempt’s cached password and prompts for a new value in the **same SSH tab**. A successfully entered override is used for that login session, even when a saved encrypted password exists. To replace the saved value permanently, edit the machine. SSH protocol failures, host-key mismatches, and rejected credentials are reported separately.
 
-**WebSocket transport (v0.5.3-dev.6):** SSH/RDP/VNC/SPICE require real HTTP WebSocket upgrade support. Earlier images omitted the Python WebSocket protocol dependency and could pass HTTP health checks while browser terminal sessions failed. The image now explicitly installs `websockets==16.0`; GitHub CI verifies a real authenticated 101 upgrade over TCP to the freshly built running container and rejects unauthorized upgrades. A passing health endpoint alone is not sufficient.
+**WebSocket transport (v0.5.4-dev.1):** SSH/RDP/VNC/SPICE require real HTTP WebSocket upgrade support. Earlier images omitted the Python WebSocket protocol dependency and could pass HTTP health checks while browser terminal sessions failed. The image now explicitly installs `websockets==16.0`; GitHub CI verifies a real authenticated 101 upgrade over TCP to the freshly built running container and rejects unauthorized upgrades. A passing health endpoint alone is not sufficient.
 
-**First SSH connection (v0.5.3-dev.6):** An untrusted SSH server automatically opens an in-workspace confirmation showing the server's SHA-256 host-key fingerprint and algorithm. Verify it out of band, then select **I verified — Trust & connect**. Trust is saved and the connection retries in the **same tab**. Cancel leaves the server untrusted; changed keys remain blocked.
+**First SSH connection (v0.5.4-dev.1):** An untrusted SSH server automatically opens an in-workspace confirmation showing the server's SHA-256 host-key fingerprint and algorithm. Verify it out of band, then select **I verified — Trust & connect**. Trust is saved and the connection retries in the **same tab**. Cancel leaves the server untrusted; changed keys remain blocked.
 
 **Deployment images:** Docker Compose pulls published artifacts from GHCR. The app is built in GitHub Actions; Docker Hub is not required on the deployment host. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
 
@@ -98,7 +98,7 @@ After first-run completion, use **Settings → Browser and network access** to u
 
 **The `/data` Docker named volume is required for persistence.** Never use `docker compose down -v` during upgrades or normal maintenance. A container/image replacement does not reset settings when the volume is preserved.
 
-## Machine workspace (v0.5.3-dev.6)
+## Machine workspace (v0.5.4-dev.1)
 
 The Machines directory is now the primary navigation destination. The host-first workspace presents a persistent machine switcher and one compact machine header, followed by **Overview, Terminal, Remote desktop, Files, Docker and Health** tabs. These tabs reuse existing SSH, SFTP, Docker, remote desktop and agentless health APIs, preserving machine records and credentials in the Docker volume. Available connection rows open SSH or the matching RDP/VNC/SPICE session directly; the Terminal tab provides a new-session / reconnect action and clear connection states. Non-SSH machines keep their desktop access without misleading file, Docker or health controls.
 
@@ -123,6 +123,10 @@ The machine-specific workspace rules are in `static/workspace.css`, loaded after
 | Updater | Settings → Software updates: configure an SSH-based executor for a specific Docker Compose project; explicit admin reauthentication and log inspection |
 | Security | SSH host-key trust, optional TOTP for HTTPS proxy, session controls, CSRF origin verification, activity journal |
 | Backups | Consistent database snapshot, host trust, and TOTP recovery key with SHA-256 manifest (sensitive backup) |
+
+## SSH inventory migration
+
+**Connections → Export SSH** downloads a credential-free JSON inventory containing machine profiles and nested folders. **Import SSH** validates all records, rejects secret-bearing fields and folder cycles, refuses collisions with existing machines or folders, and commits atomically. Existing records are never overwritten. Credentials, private keys, encrypted passwords, TOTP secrets and Vaultwarden session state are not included; reconfigure missing credentials on the destination system.
 
 ## Reverse proxy and MFA
 

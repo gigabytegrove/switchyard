@@ -61,7 +61,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='Switchyard', version='0.5.3-dev.6', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title='Switchyard', version='0.5.4-dev.1', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 def connection():
@@ -466,7 +466,7 @@ def setup_complete(body: InitialSetup, request: Request):
 
 @app.get('/healthz')
 def health():
-    return {'status': 'ok', 'version': '0.5.3-dev.6'}
+    return {'status': 'ok', 'version': '0.5.4-dev.1'}
 
 
 @app.get('/api/login/options')
@@ -808,6 +808,142 @@ def list_assets(_=Depends(require_auth)):
         return [asset_as_dict(x) for x in db.execute('SELECT * FROM assets ORDER BY environment,label')]
 
 
+
+# Portable SSH inventory: never serialize credential material or key bytes.
+SSH_INVENTORY_FIELDS = (
+    'label', 'host', 'port', 'username', 'environment', 'auth_type',
+    'credential_ref', 'key_file', 'use_tmux', 'note', 'folder_id'
+)
+
+
+class SSHInventoryImport(BaseModel):
+    format: Literal['switchyard-ssh-v1']
+    folders: list[dict] = Field(default_factory=list, max_length=300)
+    assets: list[dict] = Field(default_factory=list, max_length=1000)
+
+
+@app.get('/api/assets/export')
+def export_ssh_inventory(_=Depends(require_auth)):
+    with dbconn() as db:
+        folders = [dict(row) for row in db.execute(
+            'SELECT id,name,parent_id FROM folders ORDER BY name COLLATE NOCASE')]
+        records = []
+        for row in db.execute('SELECT ' + ','.join(SSH_INVENTORY_FIELDS) +
+                              ' FROM assets ORDER BY label COLLATE NOCASE'):
+            record = dict(row)
+            record['use_tmux'] = bool(record['use_tmux'])
+            record['folder_id'] = record['folder_id'] or ''
+            records.append(record)
+    audit('asset.inventory.exported', str(len(records)))
+    return JSONResponse({'format': 'switchyard-ssh-v1', 'folders': folders,
+                         'assets': records},
+                        headers={'Cache-Control': 'no-store',
+                                 'Content-Disposition': 'attachment; filename="switchyard-ssh-inventory.json"'})
+
+
+@app.post('/api/assets/import')
+def import_ssh_inventory(body: SSHInventoryImport, _=Depends(require_auth)):
+    # Reject unknown fields rather than silently accepting secrets. Validate the
+    # entire document before beginning a transaction so imports cannot half-apply.
+    folder_map = {}
+    folder_specs = {}
+    sibling_names = set()
+    for raw in body.folders:
+        if not isinstance(raw, dict) or set(raw) - {'id', 'name', 'parent_id'}:
+            raise HTTPException(422, 'Invalid SSH inventory folder fields')
+        old_id = raw.get('id')
+        if not isinstance(old_id, str) or len(old_id) > 36 or not old_id:
+            raise HTTPException(422, 'Invalid exported folder ID')
+        if old_id in folder_map:
+            raise HTTPException(422, 'Duplicate folder ID in inventory')
+        try:
+            folder = FolderInput.model_validate({
+                'name': raw.get('name'), 'parent_id': raw.get('parent_id')})
+        except ValueError as exc:
+            raise HTTPException(422, 'Invalid exported folder') from exc
+        if folder.parent_id is not None and len(folder.parent_id) > 36:
+            raise HTTPException(422, 'Invalid exported parent folder')
+        folder_map[old_id] = str(uuid.uuid4())
+        folder_specs[old_id] = folder
+        sibling = (folder.parent_id or '', folder.name.casefold())
+        if sibling in sibling_names:
+            raise HTTPException(422, 'Duplicate sibling folder names in inventory')
+        sibling_names.add(sibling)
+    for fid in folder_specs:
+        visited = set()
+        parent = fid
+        while parent:
+            if parent in visited:
+                raise HTTPException(422, 'Folder hierarchy cycle detected')
+            visited.add(parent)
+            folder = folder_specs.get(parent)
+            if folder is None:
+                raise HTTPException(422, 'Inventory references a missing folder')
+            parent = folder.parent_id
+
+    imported = []
+    unique = set()
+    for raw in body.assets:
+        if not isinstance(raw, dict) or set(raw) - set(SSH_INVENTORY_FIELDS):
+            raise HTTPException(422, 'Unknown or sensitive SSH inventory fields')
+        try:
+            item = AssetModel.model_validate(raw)
+        except ValueError as exc:
+            raise HTTPException(422, 'Invalid SSH machine entry') from exc
+        if item.folder_id and item.folder_id not in folder_map:
+            raise HTTPException(422, 'Machine refers to a missing inventory folder')
+        signature = (item.host.casefold(), item.port, item.username, item.label.casefold())
+        if signature in unique:
+            raise HTTPException(422, 'Duplicate SSH machine entry in inventory')
+        unique.add(signature)
+        imported.append(item)
+
+    now = int(time.time())
+    with LOCK:
+        with dbconn() as db:
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                if db.execute('SELECT count(*) FROM assets').fetchone()[0] + len(imported) > 5000:
+                    raise HTTPException(409, 'SSH machine inventory capacity exceeded')
+                for item in imported:
+                    if db.execute(
+                        'SELECT 1 FROM assets WHERE host=? COLLATE NOCASE AND port=? '
+                        'AND username=? AND label=? COLLATE NOCASE',
+                        (item.host, item.port, item.username, item.label)
+                    ).fetchone():
+                        raise HTTPException(409, 'Imported SSH machine already exists; no changes made')
+                pending = set(folder_specs)
+                while pending:
+                    ready = [fid for fid in pending if not folder_specs[fid].parent_id or
+                             folder_specs[fid].parent_id not in pending]
+                    if not ready:
+                        raise HTTPException(422, 'Invalid folder hierarchy')
+                    for fid in ready:
+                        folder = folder_specs[fid]
+                        parent_id = folder_map.get(folder.parent_id) if folder.parent_id else None
+                        if db.execute('SELECT 1 FROM folders WHERE parent_id IS ? AND name=? COLLATE NOCASE',
+                                      (parent_id, folder.name)).fetchone():
+                            raise HTTPException(409, 'Imported folder already exists; no changes made')
+                        db.execute('INSERT INTO folders(id,name,parent_id,created_at) VALUES(?,?,?,?)',
+                                   (folder_map[fid], folder.name, parent_id, now))
+                        pending.remove(fid)
+                for item in imported:
+                    db.execute('''INSERT INTO assets(id,label,host,port,username,environment,auth_type,
+                       credential_ref,key_file,use_tmux,note,created_at,updated_at,folder_id)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                       (str(uuid.uuid4()), item.label, item.host, item.port, item.username,
+                        item.environment, item.auth_type, item.credential_ref, item.key_file,
+                        int(item.use_tmux), item.note, now, now,
+                        folder_map.get(item.folder_id) if item.folder_id else None))
+                db.execute('COMMIT')
+            except Exception:
+                db.execute('ROLLBACK')
+                raise
+    audit('asset.inventory.imported', str(len(imported)))
+    return {'ok': True, 'assets_created': len(imported),
+            'folders_created': len(folder_map), 'credentials_imported': False}
+
+
 @app.post('/api/assets', status_code=201)
 def create_asset(body: AssetModel, _=Depends(require_auth)):
     aid = str(uuid.uuid4())
@@ -942,7 +1078,7 @@ def backup(_=Depends(require_auth)):
         if credentials_key and (len(credentials_key) != 44 or credkey.stat().st_mode & 0o077):
             raise HTTPException(503, 'Saved credentials key format or file permissions are unsafe')
         manifest = {
-            'application': 'Switchyard', 'format': 2, 'version': '0.5.3-dev.6',
+            'application': 'Switchyard', 'format': 2, 'version': '0.5.4-dev.1',
             'created_utc': datetime.now(timezone.utc).isoformat(),
             'files': {'switchyard.sqlite3': hashlib.sha256(content).hexdigest(),
                       'known_hosts': hashlib.sha256(hosts).hexdigest(),
@@ -1008,13 +1144,13 @@ def configure_update(body: UpdateConfig, request: Request, _=Depends(require_aut
 @app.get('/api/update/status')
 def update_status(_=Depends(require_auth)):
     configured = bool(saved_setting('update_asset_id') and saved_setting('update_project') and saved_setting('update_directory'))
-    installed = '0.5.3-dev.6'
+    installed = '0.5.4-dev.1'
     latest = None
     check_error = None
     try:
         from urllib.request import Request as UrlRequest, urlopen
         req = UrlRequest('https://raw.githubusercontent.com/gigabytegrove/switchyard/main/VERSION',
-                         headers={'User-Agent':'Switchyard/0.5.3-dev.6'})
+                         headers={'User-Agent':'Switchyard/0.5.4-dev.1'})
         with urlopen(req, timeout=3) as remote:
             contents = remote.read(80).decode('ascii').strip()
         if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.]+)?', contents):

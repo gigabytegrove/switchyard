@@ -1,3 +1,8 @@
+# 0.5.4-dev.1 (2026-10-30)
+
+- Add portable, password-free SSH machine and nested-folder JSON import/export with strict validation, conflict rejection and atomic SQLite commits.
+- Add dedicated connection workspace import/export controls and transaction/secret-redaction regression tests.
+
 ## 0.5.3-dev.6 — interactive first-use SSH host trust
 
 - Automatically discover unknown SSH host identity on Connect, show an explicit SHA-256 fingerprint confirmation dialog (host, port, algorithm), and retry in the same terminal tab only after approval.
