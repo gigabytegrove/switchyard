@@ -302,8 +302,8 @@ function renderMachineDirectory() {
     open.append(node('span','machine-symbol',machine.ssh.length?'↗':'▤'),left);
     const access=node('div','machine-access');access.append(types);
     const actions=node('div','machine-entry-actions');
-    if(machine.ssh.length)actions.append(button('SSH ↗','machine-connect-ssh',()=>connect(machine.ssh[0].id).catch(showError)));
-    if(machine.desktops.length)actions.append(button(machine.desktops[0].protocol.toUpperCase()+' ↗','machine-connect-desktop',()=>openDesktop(machine.desktops[0]).catch(showError)));
+    if(machine.ssh.length)actions.append(button('SSH ↗','machine-connect-ssh',()=>{openMachine(machine.host);connect(machine.ssh[0].id).catch(showError);}));
+    if(machine.desktops.length)actions.append(button(machine.desktops[0].protocol.toUpperCase()+' ↗','machine-connect-desktop',()=>{openMachine(machine.host);openDesktop(machine.desktops[0]).catch(showError);}));
     row.append(open,access,actions);
     return row;
   };
@@ -860,7 +860,7 @@ async function connect(aid, {newSession = false} = {}) {
     tab = {id, asset, ws: null,
       terminal: new window.Terminal({cursorBlink: true, fontFamily:'Cascadia Code, Consolas, monospace',
         fontSize:14,lineHeight:1.25,scrollback:5000,
-        theme:{background:'#1c1c20',foreground:'#F5F2F0',cursor:'#E56C7B',selectionBackground:'#58515A'}}),
+        theme:{background:'#171b19',foreground:'#ebf1e7',cursor:'#dff18a',selectionBackground:'#365244'}}),
       fit:new window.FitAddon.FitAddon()};
     tab.terminal.loadAddon(tab.fit);
     // Bind listeners once to this tab. Reconnect must not multiply handlers.
