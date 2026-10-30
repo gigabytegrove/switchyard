@@ -228,6 +228,7 @@ def run():
                 # Selecting a host only changes the right connection window.
                 cdp.call("Emulation.setDeviceMetricsOverride",
                          width=1440,height=900,deviceScaleFactor=1,mobile=False)
+                cdp.eval("setMachineTreeOpen(true)")
                 assert cdp.eval("""(function(){
                   openMachine('192.0.2.48');
                   return !!document.querySelector('#page-machine:not(.hidden)') &&
