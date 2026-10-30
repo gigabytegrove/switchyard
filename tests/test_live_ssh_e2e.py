@@ -58,6 +58,28 @@ def test_real_ssh_host_trust_saved_password_sftp_and_terminal(monkeypatch,tmp_pa
         download=browser.get(f'/api/assets/{aid}/download',params={'path':'switchyard-ci-upload.txt'})
         assert download.status_code==200,download.text
         assert download.content==b'SWITCHYARD_LIVE_SFTP_OK'
+        # Real atomic text-edit workflow and stale-content conflict.
+        opened=browser.get(f'/api/assets/{aid}/files/edit',params={'path':'switchyard-ci-upload.txt'})
+        assert opened.status_code==200,opened.text
+        current=opened.json()
+        assert current['content']=='SWITCHYARD_LIVE_SFTP_OK'
+        saved=browser.put(f'/api/assets/{aid}/files/edit',headers=headers,json={
+          'path':'switchyard-ci-upload.txt','original_sha256':current['sha256'],
+          'content':'SWITCHYARD_LIVE_SFTP_EDIT_OK'})
+        assert saved.status_code==200,saved.text
+        conflict=browser.put(f'/api/assets/{aid}/files/edit',headers=headers,json={
+          'path':'switchyard-ci-upload.txt','original_sha256':current['sha256'],
+          'content':'DO_NOT_OVERWRITE'})
+        assert conflict.status_code==409,conflict.text
+        check=browser.get(f'/api/assets/{aid}/download',params={'path':'switchyard-ci-upload.txt'})
+        assert check.content==b'SWITCHYARD_LIVE_SFTP_EDIT_OK'
+        health=browser.get(f'/api/assets/{aid}/health')
+        assert health.status_code==200,health.text
+        assert health.json()['status']=='online'
+        assert browser.get(f'/api/assets/{aid}/health/history').json()[0]['status']=='online'
+        docker=browser.get(f'/api/assets/{aid}/docker/containers')
+        assert docker.status_code==200,docker.text
+        assert isinstance(docker.json(),list)
         with browser.websocket_connect(f'/ws/terminal/{aid}',headers={'Origin':ORIGIN}) as terminal:
             terminal.send_json({'type':'auth','password':''})
             terminal.send_json({'type':'input','data':'printf SWITCHYARD_LIVE_TERMINAL_OK\n'})
