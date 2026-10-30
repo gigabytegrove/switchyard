@@ -370,8 +370,8 @@ function initMachineRail(){
     handle.setAttribute('aria-valuenow',String(value));
     if(persist)saveUiPreference(TREE_WIDTH_KEY,value);
   }
-  const saved=Number(readUiPreference(TREE_WIDTH_KEY,276));
-  applyWidth(Number.isFinite(saved)?saved:276,false);
+  const saved=Number(readUiPreference(TREE_WIDTH_KEY,236));
+  applyWidth(Number.isFinite(saved)?saved:236,false);
   let resizing=false;
   handle.addEventListener('pointerdown',event=>{
     if(event.button!==0||window.matchMedia('(max-width:760px)').matches)return;
@@ -387,11 +387,11 @@ function initMachineRail(){
   }
   handle.addEventListener('pointerup',finish);
   handle.addEventListener('pointercancel',finish);
-  handle.addEventListener('dblclick',()=>applyWidth(276));
+  handle.addEventListener('dblclick',()=>applyWidth(236));
   handle.addEventListener('keydown',event=>{
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
     event.preventDefault();
-    const previous=Number(handle.getAttribute('aria-valuenow'))||276;
+    const previous=Number(handle.getAttribute('aria-valuenow'))||236;
     applyWidth(event.key==='Home'?196:event.key==='End'?440:previous+(event.key==='ArrowLeft'?-16:16));
   });
   $('#treeClose').addEventListener('click', () => setMachineTreeOpen(false));

@@ -45,13 +45,13 @@ vm.runInContext("setFolderFolded('folder1',true);setFolderFolded('folder2',true)
 assert.equal(JSON.parse(storage.get('switchyard:folders:folded:v1')).join(','),'folder2');
 assert.equal(renders,3);
 const resize=ids.get('#machineRailResize');
-assert.equal(resize.getAttribute('aria-valuenow'),'276');
+assert.equal(resize.getAttribute('aria-valuenow'),'236');
 resize.fire('keydown',{key:'ArrowRight'});
 assert.equal(resize.getAttribute('aria-valuenow'),'292');
 resize.fire('keydown',{key:'Home'});assert.equal(resize.getAttribute('aria-valuenow'),'196');
 resize.fire('keydown',{key:'End'});assert.equal(resize.getAttribute('aria-valuenow'),'440');
-resize.fire('dblclick');assert.equal(resize.getAttribute('aria-valuenow'),'276');
-assert.equal(JSON.parse(storage.get('switchyard:directory:width:v1')),276);
+resize.fire('dblclick');assert.equal(resize.getAttribute('aria-valuenow'),'236');
+assert.equal(JSON.parse(storage.get('switchyard:directory:width:v1')),236);
 ids.get('#machineTreeToggle').fire('click');
 assert.equal(ids.get('#machineLayout').classList.contains('tree-open'),true);
 assert.equal(ids.get('#machineTreeToggle').getAttribute('aria-expanded'),'true');
