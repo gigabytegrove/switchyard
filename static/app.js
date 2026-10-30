@@ -370,7 +370,13 @@ function initMachineRail(){
     if(event.key==='Escape'&&layout.classList.contains('tree-open')){
       setMachineTreeOpen(false);$('#machineTreeToggle').focus();return;
     }
-    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){
+    // Never steal Ctrl+K from SSH terminals (readline kill-line), RDP/VNC,
+    // input fields, or an open dialog. Shortcuts operate at workbench scope.
+    const remoteInput=event.target?.closest?.('.xterm,.xterm-helper-textarea,.desktop-viewports');
+    const formInput=event.target?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"]');
+    const dialogOpen=!!document.querySelector('dialog[open]');
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'
+      &&!remoteInput&&!formInput&&!dialogOpen){
       event.preventDefault();focusMachineSearch();return;
     }
     if(event.key==='/'&&!event.ctrlKey&&!event.metaKey&&!event.altKey
