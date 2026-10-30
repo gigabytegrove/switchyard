@@ -2102,7 +2102,7 @@ function bind() {
   }));
   $('#loginUsername').addEventListener('focus', () => refreshLoginOptions());
   $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value, totp: $('#loginTotp').value.trim() } }); $('#loginPassword').value = ''; $('#loginTotp').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
-  $('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
+  $$('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
   const navToggle = $('#navMobileToggle');
   const closeGlobalNavigation = () => {
     $('#shell').classList.remove('nav-open');
