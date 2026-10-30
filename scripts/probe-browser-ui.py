@@ -144,7 +144,7 @@ def run():
                   return getComputedStyle(document.querySelector('.station-header')).backgroundColor==='rgb(39, 39, 43)' &&
                     getComputedStyle(document.querySelector('.directory-hero')).backgroundColor==='rgb(39, 39, 43)' &&
                     !!document.querySelector('.station-brand-mark[src="/static/switchyard-mark.webp"]') &&
-                    document.getElementById('stationVersion').textContent.includes('0.5.7-dev.1') &&
+                    document.getElementById('stationVersion').textContent.includes('0.5.8-dev.1') &&
                     !document.querySelector('.sidebar');
                 })()"""), "not the unique Station 02 UI (wrong image, CSS or cached shell)"
 
