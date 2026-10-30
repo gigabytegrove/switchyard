@@ -26,10 +26,12 @@ def container(*args):
     cid=subprocess.check_output(["docker","compose","ps","-q","switchyard"],text=True).strip()
     return subprocess.check_output(["docker","exec",cid,*args],text=True)
 
-for _ in range(60):
-    if container("test","-f","/tmp/ci_ssh_ready") == "":
+for _ in range(80):
+    try:
+        container("test","-f","/tmp/ci_ssh_ready")
         break
-    time.sleep(0.25)
+    except subprocess.CalledProcessError:
+        time.sleep(0.25)
 else:
     raise AssertionError("Disposable SSH target never became ready")
 

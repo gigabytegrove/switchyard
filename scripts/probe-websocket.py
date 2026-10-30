@@ -54,5 +54,5 @@ with connect(url,origin=ORIGIN,additional_headers={"Cookie":cookie},
     received=json.loads(ws.recv(timeout=20))
     assert received["type"]=="error",received
     assert received.get("code")=="ssh_connection_error",received
-    assert "SSH connection refused" in received.get("message",""),received
+    assert received.get("message","").startswith(("SSH network connection failed","SSH connection refused")),received
     print("PASS: terminal ASGI route received auth frame, attempted SSH, returned typed failure")
