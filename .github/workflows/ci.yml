@@ -31,6 +31,38 @@ jobs:
           node --check static/spice-view.js
           bash -n scripts/deploy.sh scripts/smoke-test.sh
           ! grep -Eq 'ADMIN_PASSWORD_FILE|MFA_KEY_FILE|PUBLIC_ORIGIN|LAN_ORIGINS|ALLOW_HTTP_VAULT' compose.yaml
+      - name: Prepare isolated local OpenSSH test target
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server
+          sudo mkdir -p /run/sshd
+          sudo ssh-keygen -A
+          sudo useradd -m -s /bin/bash switchyardci
+          printf 'switchyardci:disposable-ci-ssh-credential-2026\n' | sudo chpasswd
+          cat > /tmp/switchyard-ci-sshd.conf <<'SSHD'
+          Port 22222
+          ListenAddress 127.0.0.1
+          HostKey /etc/ssh/ssh_host_ed25519_key
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication no
+          PermitRootLogin no
+          AllowUsers switchyardci
+          UsePAM no
+          StrictModes yes
+          Subsystem sftp /usr/lib/openssh/sftp-server
+          SSHD
+          sudo /usr/sbin/sshd -f /tmp/switchyard-ci-sshd.conf -E /tmp/switchyard-ci-sshd.log
+          for n in $(seq 1 30); do
+            (echo > /dev/tcp/127.0.0.1/22222) 2>/dev/null && exit 0
+            sleep 1
+          done
+          sudo tail -n 60 /tmp/switchyard-ci-sshd.log
+          exit 1
+      - name: Real SSH, SFTP and terminal protocol acceptance
+        env:
+          SWITCHYARD_SSH_E2E: '1'
+        run: timeout 90s python -m pytest -q tests/test_live_ssh_e2e.py
   image-build:
     runs-on: ubuntu-24.04
     needs: source-tests
@@ -40,9 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image with browser runtime assets
-        run: docker build --pull --label org.opencontainers.image.source=https://github.com/gigabytegrove/switchyard --tag ghcr.io/gigabytegrove/switchyard:0.5.3-dev.2 .
+        run: docker build --pull --label org.opencontainers.image.source=https://github.com/gigabytegrove/switchyard --tag ghcr.io/gigabytegrove/switchyard:0.5.3-dev.3 .
       - name: Check image includes mandatory runtime assets
-        run: docker run --rm --entrypoint /bin/bash ghcr.io/gigabytegrove/switchyard:0.5.3-dev.2 /usr/local/bin/verify-runtime-assets /app/static
+        run: docker run --rm --entrypoint /bin/bash ghcr.io/gigabytegrove/switchyard:0.5.3-dev.3 /usr/local/bin/verify-runtime-assets /app/static
       - name: Start disposable zero-configuration Compose deployment
         run: |
           test ! -e .env
@@ -84,7 +116,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish verified application image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: docker push ghcr.io/gigabytegrove/switchyard:0.5.3-dev.2
+        run: docker push ghcr.io/gigabytegrove/switchyard:0.5.3-dev.3
       - name: Capture Compose logs on failure
         if: failure()
         run: docker compose logs --tail=200 || true

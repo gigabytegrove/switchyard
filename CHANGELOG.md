@@ -1,3 +1,10 @@
+## 0.5.3-dev.3 — real SSH/SFTP integration qualification
+
+- Add a live OpenSSH test target to GitHub Actions source validation (loopback-only, non-production credentials).
+- Verify unknown SSH hosts are rejected, independently corroborate an Ed25519 host fingerprint, explicitly trust the key, authenticate using a saved encrypted password, and execute a real SSH command.
+- Exercise real SFTP listing, exclusive upload and download, and an authenticated interactive SSH WebSocket terminal against the disposable server.
+- Run the integration test under a hard timeout. Existing Docker/runtime and machine configurations remain unchanged.
+
 ## 0.5.3-dev.2 — connection reliability and workbench corrections
 
 - Reconnect an SSH session in its original tab using a fresh WebSocket, preserving terminal history and registering input/resize listeners exactly once. New session remains explicit and separate.
