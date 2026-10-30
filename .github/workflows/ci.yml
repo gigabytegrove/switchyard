@@ -112,6 +112,15 @@ jobs:
           assert json.loads(request('/api/network',cookie=cookie).read())['lan_origins']==[]
           print('PASS: clean first boot, claim code, account setup, login, and persistent network configuration')
           PY
+      - name: Exercise responsive console in real headless Chrome
+        run: timeout 90s python3 scripts/probe-browser-ui.py
+      - name: Upload responsive UI screenshots for visual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: switchyard-ui-screenshots
+          path: ui-artifacts/
+          if-no-files-found: ignore
       - name: Real authenticated WebSocket upgrade against running Docker container
         run: |
           python3 -m pip install --disable-pip-version-check websockets==16.0
