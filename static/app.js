@@ -520,6 +520,8 @@ function renderMachineInfo() {
 }
 function renderWorkbenchSessions() {
   const nav=$('#workbenchSessions');if(!nav)return;nav.replaceChildren();
+  const dockToggle=$('#workbenchSessionsToggle');
+  if (dockToggle) dockToggle.textContent=state.sessionDockOpen?'Hide sessions':'Sessions ('+(state.tabs.size+desktopTabs.size)+')';
   const home=button('⌂  Connections','workbench-session-tab'+(state.machineTab==='overview'?' active':''),()=>machineTab('overview'));
   home.setAttribute('role','tab');home.setAttribute('aria-selected',String(state.machineTab==='overview'));nav.append(home);
   for(const [id,session] of state.tabs){
@@ -603,6 +605,35 @@ function renderMachineOverview(){
   if(!asset&&!desktops.length)list.append(node('div','context-empty','No connection profiles exist for this machine. Add SSH or remote desktop access.'));
   target.append(list,node('div','workbench-connection-note','Choose a connection to open a session. Open sessions stay in the dock. Use Switch machine to jump to another system.'));
 }
+
+const SESSION_FOCUS_PREF = 'switchyard:session:focus:v1';
+function fitVisibleSession() {
+  if (state.page !== 'machine') return;
+  if (state.machineTab === 'terminals') {
+    const tab=state.tabs.get(state.currentTab);
+    if (tab?.fit && tab.terminal?.element && !$('#machinePanel-terminals').classList.contains('hidden')) {
+      try { tab.fit.fit(); } catch (error) { console.warn('Terminal fit deferred', error); }
+    }
+  } else if (state.machineTab === 'desktops') {
+    fitDesktop(desktopCurrent());
+  }
+}
+function syncWorkspaceChrome() {
+  const workspace = state.page === 'machine';
+  const session = workspace && ['terminals','desktops'].includes(state.machineTab);
+  const focused = session && state.focusPreferred !== false;
+  $('#shell').classList.toggle('workbench-open',workspace);
+  $('#shell').classList.toggle('session-focus',focused);
+  $('#machineLayout').classList.toggle('session-dock-open',state.sessionDockOpen === true);
+  const focusToggle=$('#workbenchFocusToggle');
+  focusToggle.disabled = !session;
+  focusToggle.setAttribute('aria-pressed',String(focused));
+  focusToggle.textContent=focused?'Show controls':'Focus view';
+  const dockToggle=$('#workbenchSessionsToggle');
+  dockToggle.setAttribute('aria-expanded',String(state.sessionDockOpen === true));
+  dockToggle.textContent=state.sessionDockOpen?'Hide sessions':'Sessions ('+(state.tabs.size+desktopTabs.size)+')';
+  if (session) requestAnimationFrame(() => requestAnimationFrame(fitVisibleSession));
+}
 function machineTab(tab){
   if(['files','docker','health'].includes(tab)){navigate(tab);return;}
   if(!['overview','terminals','desktops'].includes(tab))tab='overview';
@@ -613,6 +644,7 @@ function machineTab(tab){
     if(state.currentTab)requestAnimationFrame(()=>state.tabs.get(state.currentTab)?.fit.fit());}
   if(tab==='desktops'){renderDesktopTabs();requestAnimationFrame(()=>fitDesktop(desktopCurrent()));}
   renderWorkbenchSessions();
+  syncWorkspaceChrome();
 }
 function showFolderDialog(folder = null) {
   $('#folderForm').reset(); $('#folderForm').dataset.edit = folder?.id || '';
@@ -671,6 +703,7 @@ function navigate(page) {
   $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page || (page === 'machine' && el.dataset.page === 'machines')));
   if (page === 'machine') {updateMachineHeader();renderWorkbenchSessions();}
+  syncWorkspaceChrome();
   $('#bread').textContent = ({ machine:'Machine / ' + machineTitle(), machines:'Machines', overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', services: 'System services', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
   if (page === 'desktops') { refreshDesktops().catch(showError); refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); fitDesktop(desktopCurrent()); }
   if (page === 'runbooks') refreshRunbooks().catch(showError);
@@ -860,7 +893,7 @@ async function connect(aid, {newSession = false} = {}) {
     tab = {id, asset, ws: null,
       terminal: new window.Terminal({cursorBlink: true, fontFamily:'Cascadia Code, Consolas, monospace',
         fontSize:14,lineHeight:1.25,scrollback:5000,
-        theme:{background:'#171b19',foreground:'#ebf1e7',cursor:'#dff18a',selectionBackground:'#365244'}}),
+        theme:{background:'#1b1a1d',foreground:'#eceaec',cursor:'#e24e62',selectionBackground:'#575158'}}),
       fit:new window.FitAddon.FitAddon()};
     tab.terminal.loadAddon(tab.fit);
     // Bind listeners once to this tab. Reconnect must not multiply handlers.
@@ -2073,6 +2106,8 @@ async function bootstrap() {
 
 function safeAsync(fn) { return event => { Promise.resolve(fn(event)).catch(showError); }; }
 function bind() {
+  state.focusPreferred=readUiPreference(SESSION_FOCUS_PREF,true)!==false;
+  state.sessionDockOpen=false;
   initMachineWorkspace();
   bindDesktopUI();
   $('#clock').textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -2114,6 +2149,29 @@ function bind() {
   $('#loginUsername').addEventListener('focus', () => refreshLoginOptions());
   $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value, totp: $('#loginTotp').value.trim() } }); $('#loginPassword').value = ''; $('#loginTotp').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
   $$('[data-page]').forEach(b => b.addEventListener('click', () => { navigate(b.dataset.page); b.closest('details')?.removeAttribute('open'); }));
+  $('#workbenchFocusToggle').addEventListener('click', () => {
+    state.focusPreferred = !(state.focusPreferred !== false);
+    saveUiPreference(SESSION_FOCUS_PREF,state.focusPreferred);
+    syncWorkspaceChrome();
+  });
+  $('#workbenchSessionsToggle').addEventListener('click', () => {
+    state.sessionDockOpen = !state.sessionDockOpen;
+    syncWorkspaceChrome();
+  });
+  window.addEventListener('keydown', event => {
+    if (event.key !== 'F8' || event.repeat || event.target?.closest?.('input,textarea,select,[contenteditable="true"]') || document.querySelector('dialog[open]')) return;
+    if (state.page !== 'machine' || !['terminals','desktops'].includes(state.machineTab)) return;
+    event.preventDefault();
+    $('#workbenchFocusToggle').click();
+  });
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => {
+      if (state.page === 'machine' && ['terminals','desktops'].includes(state.machineTab)) {
+        requestAnimationFrame(fitVisibleSession);
+      }
+    });
+    ro.observe($('#machineContent'));
+  }
   const navToggle = $('#navMobileToggle');
   const closeGlobalNavigation = () => {
     $('#shell').classList.remove('nav-open');
