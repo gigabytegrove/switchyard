@@ -183,6 +183,12 @@ def run():
                         cdp.eval("setMachineTreeOpen(true)")
                     else:
                         cdp.eval("setMachineTreeOpen(false)")
+                        # The mobile Machines drawer animates for 180ms;
+                        # check the settled position, not its first frame.
+                        cdp.until("""(function(){
+                          const r=document.querySelector('.machine-context').getBoundingClientRect();
+                          return r.right<=1;
+                        })()""","mobile Machines drawer finishes closing",timeout=5)
                     result = cdp.eval("""(function(){
                       const r=s=>{const x=document.querySelector(s).getBoundingClientRect();
                         return {x:x.x,y:x.y,width:x.width,height:x.height,right:x.right};};
