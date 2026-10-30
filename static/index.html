@@ -3,13 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#e9e6dc">
+  <meta name="theme-color" content="#27272b">
   <title>Switchyard · Remote operations</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/xterm.css">
   <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/workspace.css">
-  <script src="/static/xterm.js" defer></script>
+    <script src="/static/xterm.js" defer></script>
   <script src="/static/addon-fit.js" defer></script>
   <script src="/static/guacamole.js" defer></script>
   <script src="/static/app.js" defer></script>
@@ -55,8 +54,8 @@ http://ops.home.arpa:9791"></textarea>
   <main id="login" class="login-layout">
     <section class="login-story">
       <div class="wordmark"><img src="/static/switchyard-wordmark.webp" alt="SwitchYard" width="210" height="210"></div>
-      <h1>Every machine.<br><em>One control room.</em></h1>
-      <p>A focused place to reach your infrastructure. Your connections, your credentials, your network.</p>
+      <h1>Your infrastructure.<br><em>Under control.</em></h1>
+      <p>SSH, remote desktops, files, and systems work in one purposeful operations desk.</p>
       <div class="login-bottom"><span class="live-dot"></span> Private operations console <span class="edition">01 / 2026</span></div>
     </section>
     <section class="login-panel">
@@ -77,28 +76,34 @@ http://ops.home.arpa:9791"></textarea>
     </section>
   </main>
   <div id="shell" class="shell hidden">
-    <aside class="sidebar" aria-label="Primary navigation">
-      <div class="brand"><img class="brand-emblem" src="/static/switchyard-mark.webp" alt="" width="48" height="48"><div><strong>SWITCHYARD</strong><small>REMOTE OPERATIONS</small></div></div>
-      <div class="nav-label">WORKSPACE</div>
-      <nav id="navigation">
-        <button data-page="machines" class="nav-item active"><span class="nav-symbol">▤</span> Connections</button>
-        <button data-page="files" class="nav-item"><span class="nav-symbol">⇅</span> Files</button>
-        <button data-page="docker" class="nav-item"><span class="nav-symbol">⬡</span> Docker</button>
-        <button data-page="services" class="nav-item"><span class="nav-symbol">⚙</span> Services</button>
-        <button data-page="health" class="nav-item"><span class="nav-symbol">◉</span> Health</button>
-        <button data-page="runbooks" class="nav-item"><span class="nav-symbol">⌘</span> Runbooks</button>
-        <button data-page="activity" class="nav-item"><span class="nav-symbol">◷</span> Activity</button>
+    <aside class="sidebar" id="shellNavigation" aria-label="Primary navigation">
+      <div class="brand"><img class="brand-emblem" src="/static/switchyard-mark.webp" alt="" width="48" height="48"><div><strong>SWITCHYARD</strong><small>OPERATIONS DESK</small></div></div>
+      <div class="nav-label">CONTROL ROOM</div>
+      <nav id="navigation" aria-label="Workspaces">
+        <button type="button" data-page="machines" class="nav-item active"><span class="nav-symbol" aria-hidden="true">▣</span> Connections</button>
+        <button type="button" data-page="files" class="nav-item"><span class="nav-symbol" aria-hidden="true">⇅</span> File transfer</button>
+        <button type="button" data-page="docker" class="nav-item"><span class="nav-symbol" aria-hidden="true">⬡</span> Containers</button>
+        <button type="button" data-page="services" class="nav-item"><span class="nav-symbol" aria-hidden="true">⚙</span> Linux services</button>
+        <button type="button" data-page="health" class="nav-item"><span class="nav-symbol" aria-hidden="true">◉</span> System health</button>
+        <button type="button" data-page="runbooks" class="nav-item"><span class="nav-symbol" aria-hidden="true">⌘</span> Runbooks</button>
+        <button type="button" data-page="activity" class="nav-item"><span class="nav-symbol" aria-hidden="true">◷</span> Audit journal</button>
       </nav>
       <div class="nav-label spaced">ADMINISTRATION</div>
-      <nav id="adminNavigation">
-        <button data-page="keys" class="nav-item"><span class="nav-symbol">⚿</span> SSH keys</button>
-        <button data-page="trust" class="nav-item"><span class="nav-symbol">⌘</span> Host trust</button>
-        <button data-page="settings" class="nav-item"><span class="nav-symbol">⚙</span> Settings</button>
+      <nav id="adminNavigation" aria-label="Administration">
+        <button type="button" data-page="keys" class="nav-item"><span class="nav-symbol" aria-hidden="true">⚿</span> SSH keys</button>
+        <button type="button" data-page="trust" class="nav-item"><span class="nav-symbol" aria-hidden="true">◇</span> Host trust</button>
+        <button type="button" data-page="settings" class="nav-item"><span class="nav-symbol" aria-hidden="true">⚙</span> Settings</button>
       </nav>
-      <div class="sidebar-bottom"><div class="account-circle">A</div><div class="account-text"><strong>Administrator</strong><span>Local account</span></div><button id="logoutBtn" class="signout" title="Sign out" aria-label="Sign out">↗</button></div>
+      <div class="sidebar-bottom"><div class="account-circle" aria-hidden="true">A</div><div class="account-text"><strong>Administrator</strong><span>Private workspace</span></div><button type="button" id="logoutBtn" class="signout" title="Sign out" aria-label="Sign out">↗</button></div>
     </aside>
+    <button type="button" id="navDismiss" class="nav-dismiss-overlay" aria-label="Close navigation" tabindex="-1"></button>
     <main class="body-pane">
-      <header class="topbar"><div class="route-mark" aria-hidden="true"><span></span><span></span><span></span></div><div class="breadcrumb"><span>SWITCHYARD</span><b>/</b><strong id="bread">Overview</strong></div><div class="top-right"><span class="online"><i></i> Switchyard online</span><span id="clock"></span></div></header>
+      <header class="topbar">
+        <button id="navMobileToggle" type="button" aria-expanded="false" aria-controls="shellNavigation" aria-label="Open navigation">☰</button>
+        <div class="route-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="breadcrumb"><span>Operations desk</span><b>/</b><strong id="bread">Connections</strong></div>
+        <div class="top-right"><button type="button" id="globalFind" class="global-find" aria-label="Find a machine"><span>Find a machine</span><kbd>Ctrl K</kbd></button><span class="online"><i></i> Local session</span><span id="clock"></span></div>
+      </header>
       <section id="page-machines" class="page content-page hidden" aria-labelledby="machineDirectoryTitle">
         <div class="heading-row machine-heading"><div><div class="section-kicker">YOUR INFRASTRUCTURE</div><h1 id="machineDirectoryTitle">Machines.</h1><p>Every host, every connection, organized your way.</p></div>
           <div class="form-actions"><button type="button" class="action-quiet" id="sshExport">Export SSH</button><button type="button" class="action-quiet" id="sshImport">Import SSH</button><input id="sshImportFile" type="file" accept=".json,application/json" hidden aria-label="Switchyard SSH inventory JSON"><button type="button" class="action-quiet" id="newFolder">+ Folder</button><button type="button" class="action-primary" data-action="new-asset">+ Add machine</button></div></div>
@@ -126,10 +131,17 @@ http://ops.home.arpa:9791"></textarea>
                   <div class="machine-compact-meta"><span id="machineAddress" class="mono">Choose a connection on the left</span><span id="machineAvailability" role="status"></span><span id="machineFolderLabel" class="hidden"></span></div></div>
               </div>
               <div class="machine-masthead-actions">
-                <button type="button" class="action-quiet" id="machineProbe">Check SSH port</button><button type="button" class="action-quiet" id="machineInfoToggle" aria-expanded="false" aria-controls="machineInfoDrawer">Details</button>
-                <button type="button" class="action-quiet" id="machineEdit">Edit</button>
-                <button type="button" class="action-quiet" id="machineAddDesktop">+ Desktop</button><button type="button" class="action-quiet" id="machineTrust">Host trust</button>
-                <button type="button" class="action-primary" id="machinePrimaryConnect">Connect SSH ↗</button>
+                <button type="button" class="action-primary" id="machinePrimaryConnect">Connect SSH →</button>
+                <button type="button" class="action-quiet" id="machineInfoToggle" aria-expanded="false" aria-controls="machineInfoDrawer">Details</button>
+                <details class="command-menu" id="machineCommandMenu">
+                  <summary>Actions</summary>
+                  <div class="command-menu-items">
+                    <button type="button" class="action-quiet" id="machineEdit">Edit machine</button>
+                    <button type="button" class="action-quiet" id="machineAddDesktop">Add desktop</button>
+                    <button type="button" class="action-quiet" id="machineTrust">Host trust</button>
+                    <button type="button" class="action-quiet" id="machineProbe">Check SSH port</button>
+                  </div>
+                </details>
               </div>
             </header>
             <span id="desktopCount" class="sr-only"></span><span id="terminalCount" class="sr-only"></span>
@@ -148,7 +160,7 @@ http://ops.home.arpa:9791"></textarea>
       </section>
       <section id="page-overview" class="page content-page">
         <div class="section-kicker">01 — CONTROL ROOM</div>
-        <div class="heading-row"><div><h1>Good to see you.</h1><p>Your infrastructure, without the clutter.</p></div><button class="action-primary" data-action="new-asset">+ Add a connection</button></div>
+        <div class="heading-row"><div><h1>Control room.</h1><p>Your infrastructure, without the clutter.</p></div><button class="action-primary" data-action="new-asset">+ Add a connection</button></div>
         <div class="metrics"><div><div class="metric-label">MANAGED ASSETS</div><div id="metricAssets" class="metric-value">—</div><div class="metric-sub">Saved connections</div></div><div><div class="metric-label">ENVIRONMENTS</div><div id="metricGroups" class="metric-value">—</div><div class="metric-sub">Organized workspaces</div></div><div><div class="metric-label">AUDIT EVENTS</div><div id="metricEvents" class="metric-value">—</div><div class="metric-sub">Persisted locally</div></div></div>
         <div class="two-heading"><h2>Quick connections</h2><button class="text-button" data-page="assets">View all assets →</button></div><div id="quickAssets" class="asset-grid"></div>
         <div class="overview-footer"><strong>Designed for direct access.</strong><span>SSH host keys are verified before connecting. Vault credentials are resolved on demand.</span></div>

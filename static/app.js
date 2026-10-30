@@ -151,7 +151,11 @@ function initMachineWorkspace() {
   $('#treeNewMachine').addEventListener('click', () => openAsset());
   $('#machineInfoToggle').addEventListener('click', () => toggleMachineInfo());
   $('#machineInfoClose').addEventListener('click', () => toggleMachineInfo(false));
-  $('#machineSwitchSearch').addEventListener('input', renderMachineSwitcher);
+  let treeSearchDebounce;
+  $('#machineSwitchSearch').addEventListener('input', () => {
+    clearTimeout(treeSearchDebounce);
+    treeSearchDebounce = setTimeout(renderMachineSwitcher, 110);
+  });
   initMachineRail();
   $('#machinePrimaryConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id).catch(showError);});
   $('#machineTrust').addEventListener('click', () => {const a=machineAsset();if(!a)return;$('#scanHost').value=a.host;$('#scanPort').value=a.port||22;navigate('trust');$('#scanHost').focus();});
@@ -626,18 +630,22 @@ function setLogin() {
 }
 async function setShell() {
   $('#setup').classList.add('hidden'); $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
-  await refreshFolders(); await refreshAssets(); await refreshDesktops();
+  // Fetch independent inventory sources concurrently instead of serial startup roundtrips.
+  await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops()]);
   state.machineHost = machines()[0]?.host || null;
   updateMachineHeader(); renderMachineOverview(); renderDesktopList();
   navigate('machine'); machineTab('overview');
 }
 async function refreshAssets() {
-  state.assets = await api('/assets'); renderAssets(); renderQuick(); renderFileSelect(); renderDockerSelect(); renderServiceSelect(); renderHealthSelect();
+  const [assets,info] = await Promise.all([api('/assets'),api('/overview').catch(() => null)]);
+  state.assets = assets;
+  renderAssets(); renderQuick(); renderFileSelect(); renderDockerSelect(); renderServiceSelect(); renderHealthSelect();
   renderMachineDirectory(); renderMachineSwitcher();
-  const info = await api('/overview');
-  $('#metricAssets').textContent = info.assets;
-  $('#metricGroups').textContent = info.environments;
-  $('#metricEvents').textContent = info.audit_events;
+  if (info) {
+    $('#metricAssets').textContent = info.assets;
+    $('#metricGroups').textContent = info.environments;
+    $('#metricEvents').textContent = info.audit_events;
+  }
 }
 function navigate(page) {
   if (page === 'vault') { navigate('settings'); settingsTab('integrations'); return; }
@@ -647,7 +655,9 @@ function navigate(page) {
     navigate('machine'); machineTab(page); return;
   }
   state.page = page;
-  $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
+  $('#shell')?.classList.remove('nav-open');
+  $('#navMobileToggle')?.setAttribute('aria-expanded','false');
+  $('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page || (page === 'machine' && el.dataset.page === 'machines')));
   if (page === 'machine') {updateMachineHeader();renderWorkbenchSessions();}
   $('#bread').textContent = ({ machine:'Machine / ' + machineTitle(), machines:'Machines', overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', services: 'System services', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
@@ -839,7 +849,7 @@ async function connect(aid, {newSession = false} = {}) {
     tab = {id, asset, ws: null,
       terminal: new window.Terminal({cursorBlink: true, fontFamily:'Cascadia Code, Consolas, monospace',
         fontSize:14,lineHeight:1.25,scrollback:5000,
-        theme:{background:'#202027',foreground:'#F5F6F9',cursor:'#E24E62',selectionBackground:'#58586A'}}),
+        theme:{background:'#1c1c20',foreground:'#F5F2F0',cursor:'#E56C7B',selectionBackground:'#58515A'}}),
       fit:new window.FitAddon.FitAddon()};
     tab.terminal.loadAddon(tab.fit);
     // Bind listeners once to this tab. Reconnect must not multiply handlers.
@@ -1667,8 +1677,11 @@ async function refreshDesktopGateway() {
   }
 }
 async function refreshDesktops() {
-  await refreshDesktopGateway();
-  desktopRecords = await api('/desktops'); renderDesktopList(); renderMachineDirectory(); if (state.machineHost) renderMachineOverview();
+  // Never block host inventory on an independent gateway health check.
+  desktopRecords = await api('/desktops');
+  renderDesktopList(); renderMachineDirectory();
+  if (state.machineHost) renderMachineOverview();
+  void refreshDesktopGateway().catch(showError);
 }
 async function refreshDesktopActive() {
   const sessions = await api('/desktops/sessions/active');
@@ -2089,7 +2102,28 @@ function bind() {
   }));
   $('#loginUsername').addEventListener('focus', () => refreshLoginOptions());
   $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value, totp: $('#loginTotp').value.trim() } }); $('#loginPassword').value = ''; $('#loginTotp').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
-  $$('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
+  $('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
+  const navToggle = $('#navMobileToggle');
+  const closeGlobalNavigation = () => {
+    $('#shell').classList.remove('nav-open');
+    navToggle.setAttribute('aria-expanded','false');
+  };
+  navToggle.addEventListener('click', () => {
+    const open = $('#shell').classList.toggle('nav-open');
+    navToggle.setAttribute('aria-expanded',String(open));
+  });
+  $('#navDismiss').addEventListener('click', closeGlobalNavigation);
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeGlobalNavigation();
+  });
+  $('#globalFind').addEventListener('click', () => {
+    navigate('machine');
+    if (window.matchMedia('(max-width:620px)').matches) setMachineTreeOpen(true);
+    $('#machineSwitchSearch').focus();
+  });
+  $('#machineCommandMenu').addEventListener('click', event => {
+    if (event.target.closest('button')) $('#machineCommandMenu').open = false;
+  });
   $$('[data-action="new-asset"]').forEach(b => b.addEventListener('click', () => openAsset()));
   $('#logoutBtn').addEventListener('click', safeAsync(async () => { await api('/logout', { method: 'POST' }); setLogin(); }));
   $('#assetAuth').addEventListener('change', syncAuthFields);
