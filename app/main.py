@@ -1677,7 +1677,7 @@ async def upload(aid: str, path: str, file: UploadFile = File(...), x_ssh_passwo
             with client.open_sftp() as sftp:
                 target = join(path, filename)
                 # Exclusive create; do not silently overwrite an existing remote file.
-                with sftp.file(target, 'x') as f:
+                with sftp.file(target, 'wx') as f:
                     f.write(data)
         finally:
             client.close()
@@ -2172,7 +2172,7 @@ def file_edit_save(aid: str, body: FileEditModel, x_ssh_password: str | None = H
             if not callable(getattr(sftp, 'posix_rename', None)):
                 raise HTTPException(501, 'Remote server does not support atomic file replacement')
             try:
-                with sftp.file(tmp_path, 'x') as temp:
+                with sftp.file(tmp_path, 'wx') as temp:
                     temp.write(content)
                     temp.flush()
                 sftp.chmod(tmp_path, mode)
