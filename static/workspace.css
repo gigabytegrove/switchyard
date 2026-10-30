@@ -370,3 +370,17 @@ button:disabled {cursor:not-allowed;opacity:.5}
 #machineTrust{white-space:nowrap}
 @media(max-width:1000px){.machine-masthead-actions #machineTrust{font-size:11px;padding-inline:7px}}
 @media(max-width:520px){.machine-masthead-actions #machineTrust{display:none}}
+
+/* First-use SSH identity confirmation. No trust without explicit approval. */
+.ssh-trust-dialog{width:min(540px,calc(100vw - 28px));max-width:540px}
+.ssh-trust-dialog #sshTrustExplanation{line-height:1.55;color:#404451}
+.ssh-trust-details{display:grid;gap:1px;margin:16px 0;background:#dfe1e6;border:1px solid #dfe1e6}
+.ssh-trust-details>div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 12px;background:#fff}
+.ssh-trust-details span{color:#555a66;font-size:12px}
+.ssh-trust-details strong{text-align:right;overflow-wrap:anywhere;color:#222530}
+.ssh-trust-label{font-weight:750;margin:14px 0 5px}
+.ssh-trust-fingerprint{display:block;overflow-wrap:anywhere;padding:12px;color:#801528;background:#fff4f5;border-left:3px solid #b72237;font-size:13px;font-weight:700;line-height:1.6;user-select:text}
+.ssh-trust-caution{line-height:1.55;font-size:12px;color:#4c5060}
+.ssh-trust-caution code{overflow-wrap:anywhere;font-size:11px}
+.ssh-trust-dialog button:focus-visible{outline:3px solid #b72237;outline-offset:3px}
+@media(max-width:520px){.ssh-trust-dialog .modal-actions{display:grid;grid-template-columns:1fr}.ssh-trust-dialog .modal-actions button{width:100%}}

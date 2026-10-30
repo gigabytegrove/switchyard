@@ -723,11 +723,77 @@ async function removeAsset(asset) {
   await api('/assets/' + asset.id, { method: 'DELETE' }); await refreshAssets(); renderMachineDirectory(); toast('Connection removed.');
 }
 async function promptPassword(asset, options={}) { return promptCredential(asset,options); }
+/** Review the first observed SSH key. Cancel/Escape must never save trust. */
+function confirmSSHHostFingerprint(asset,key) {
+  const dialog=$('#sshTrustDialog');
+  if(dialog.open)return Promise.reject(Error('An SSH fingerprint review is already open.'));
+  $('#sshTrustHost').textContent=asset.host+':'+Number(asset.port||22);
+  $('#sshTrustAlgorithm').textContent=key.key_type;
+  $('#sshTrustFingerprint').textContent=key.fingerprint;
+  $('#sshTrustName').textContent=asset.label||asset.host;
+  const approve=$('#sshTrustApprove'),cancel=$('#sshTrustCancel'),close=$('#sshTrustClose');
+  return new Promise(resolve=>{
+    let settled=false;
+    const cleanup=()=>{
+      approve.removeEventListener('click',accept);
+      cancel.removeEventListener('click',decline);
+      close.removeEventListener('click',decline);
+      dialog.removeEventListener('cancel',escape);
+      dialog.removeEventListener('close',closed);
+    };
+    const finish=approved=>{
+      if(settled)return;
+      settled=true;cleanup();
+      if(dialog.open)dialog.close();
+      resolve(approved);
+    };
+    const accept=()=>finish(true);
+    const decline=()=>finish(false);
+    const escape=event=>{event.preventDefault();finish(false);};
+    const closed=()=>finish(false);
+    approve.addEventListener('click',accept);
+    cancel.addEventListener('click',decline);
+    close.addEventListener('click',decline);
+    dialog.addEventListener('cancel',escape);
+    dialog.addEventListener('close',closed);
+    dialog.showModal();
+    approve.focus();
+  });
+}
+async function resolveUnknownSSHHost(asset,tab,ws) {
+  try {
+    const key=await api('/hosts/discover',{method:'POST',body:{host:asset.host,port:Number(asset.port||22)}});
+    if(key.host!==asset.host || Number(key.port)!==Number(asset.port||22)
+       || !/^SHA256:[A-Za-z0-9+/]{43}$/.test(key.fingerprint)
+       || !key.key_type || !key.public_key)
+      throw Error('SSH fingerprint discovery returned inconsistent data. Host remains untrusted.');
+    if(state.tabs.get(tab.id)!==tab)return;
+    if(!await confirmSSHHostFingerprint(asset,key)){
+      tab.terminal.writeln('\r\n[SSH host trust declined. Connection cancelled.]');
+      return;
+    }
+    await api('/hosts/trust',{method:'POST',body:{
+      host:key.host,port:Number(key.port),key_type:key.key_type,public_key:key.public_key
+    }});
+    toast('SSH fingerprint trusted for '+asset.host+'. Connecting…');
+    if(state.tabs.get(tab.id)!==tab)return;
+    if(tab.ws===ws){tab.ws=null;ws.close();}
+    tab.trustPending=false;
+    await connect(asset.id);  // Same tab, same credentials; never silently trust.
+  }finally{
+    tab.trustPending=false;
+    updateTerminalStatus();
+  }
+}
 async function connect(aid, {newSession = false} = {}) {
   const asset = state.assets.find(a => String(a.id) === String(aid));
   if (!asset) { toast('Machine connection was not found.', true); return; }
   if (!window.Terminal || !window.FitAddon) { toast('Terminal assets are missing from the container.', true); return; }
   const matches = [...state.tabs.values()].filter(t => String(t.asset.id) === String(aid));
+  if(!newSession){
+    const reviewing=matches.find(t=>t.trustPending);
+    if(reviewing){selectTab(reviewing.id);return reviewing.id;}
+  }
   const active = matches.find(t => !t.authFailed && t.ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(t.ws.readyState));
   if (active && !newSession) { selectTab(active.id); return active.id; }
   const previous = newSession ? null : matches.find(t => t.authFailed || !t.ws || t.ws.readyState === WebSocket.CLOSED);
@@ -794,7 +860,21 @@ async function connect(aid, {newSession = false} = {}) {
       else if(message.type==='error'){
         tab.reportedServerError=true;
         const detail=typeof message.message==='string'?message.message:'SSH connection failed';
+        const untrusted=message.code==='ssh_host_unknown'||detail.startsWith('SSH host is not trusted');
+        const changed=message.code==='ssh_host_changed'||detail.startsWith('SSH host key changed');
         const rejected=message.code==='ssh_auth_rejected'||detail.startsWith('SSH authentication rejected');
+        if(untrusted && !tab.trustPending){
+          tab.trustPending=true;
+          tab.terminal.writeln('\r\n[First connection: discovering SSH fingerprint for approval…]');
+          void resolveUnknownSSHHost(asset,tab,ws).catch(error=>{
+            tab.terminal.writeln('\r\n[SSH host trust failed: '+error.message+']');
+            toast(error.message,true);
+          });
+          return;
+        }
+        if(changed){
+          tab.terminal.writeln('\r\n\x1b[31m[SECURITY WARNING: Host key changed. Connection blocked. Verify the replacement out of band before updating Host trust.]\x1b[0m');
+        }
         if(rejected && asset.auth_type==='interactive'){
           discardRejectedPassword(asset.id);
           tab.authFailed=true;

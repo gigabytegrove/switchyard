@@ -36,6 +36,10 @@ def test_real_ssh_host_trust_saved_password_sftp_and_terminal(monkeypatch,tmp_pa
             m.ssh_client(asset)
         assert untrusted.value.status_code==409,untrusted.value.detail
         assert 'not trusted' in untrusted.value.detail.lower()
+        with browser.websocket_connect(f'ws://127.0.0.1:9791/ws/terminal/{aid}',headers={'Origin':ORIGIN}) as unknown_ws:
+            unknown_ws.send_json({'type':'auth','password':''})
+            rejection=unknown_ws.receive_json()
+            assert rejection['type']=='error' and rejection['code']=='ssh_host_unknown',rejection
         discovered=browser.post('/api/hosts/discover',headers=headers,json={'host':'127.0.0.1','port':PORT})
         assert discovered.status_code==200,discovered.text
         key=discovered.json()

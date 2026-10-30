@@ -1,3 +1,10 @@
+## 0.5.3-dev.6 — interactive first-use SSH host trust
+
+- Automatically discover unknown SSH host identity on Connect, show an explicit SHA-256 fingerprint confirmation dialog (host, port, algorithm), and retry in the same terminal tab only after approval.
+- Cancel/Escape leave the host untrusted; host-key changes remain blocked pending independent verification.
+- Provide typed WebSocket errors for unknown and changed keys. No data reset or credential migration.
+- Test first-connection approval, refusal and key changes against shipped handlers, plus unknown-host errors against a real OpenSSH server.
+
 ## 0.5.3-dev.5 — restore real network WebSocket connections
 
 - **Root-cause fix:** The Docker image installed bare `uvicorn` without any Python WebSocket protocol implementation. HTTP health/setup worked while the browser terminal WebSocket upgrade failed before SSH authentication.

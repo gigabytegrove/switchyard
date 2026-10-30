@@ -61,7 +61,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='Switchyard', version='0.5.3-dev.5', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title='Switchyard', version='0.5.3-dev.6', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 def connection():
@@ -466,7 +466,7 @@ def setup_complete(body: InitialSetup, request: Request):
 
 @app.get('/healthz')
 def health():
-    return {'status': 'ok', 'version': '0.5.3-dev.5'}
+    return {'status': 'ok', 'version': '0.5.3-dev.6'}
 
 
 @app.get('/api/login/options')
@@ -942,7 +942,7 @@ def backup(_=Depends(require_auth)):
         if credentials_key and (len(credentials_key) != 44 or credkey.stat().st_mode & 0o077):
             raise HTTPException(503, 'Saved credentials key format or file permissions are unsafe')
         manifest = {
-            'application': 'Switchyard', 'format': 2, 'version': '0.5.3-dev.5',
+            'application': 'Switchyard', 'format': 2, 'version': '0.5.3-dev.6',
             'created_utc': datetime.now(timezone.utc).isoformat(),
             'files': {'switchyard.sqlite3': hashlib.sha256(content).hexdigest(),
                       'known_hosts': hashlib.sha256(hosts).hexdigest(),
@@ -1008,13 +1008,13 @@ def configure_update(body: UpdateConfig, request: Request, _=Depends(require_aut
 @app.get('/api/update/status')
 def update_status(_=Depends(require_auth)):
     configured = bool(saved_setting('update_asset_id') and saved_setting('update_project') and saved_setting('update_directory'))
-    installed = '0.5.3-dev.5'
+    installed = '0.5.3-dev.6'
     latest = None
     check_error = None
     try:
         from urllib.request import Request as UrlRequest, urlopen
         req = UrlRequest('https://raw.githubusercontent.com/gigabytegrove/switchyard/main/VERSION',
-                         headers={'User-Agent':'Switchyard/0.5.3-dev.5'})
+                         headers={'User-Agent':'Switchyard/0.5.3-dev.6'})
         with urlopen(req, timeout=3) as remote:
             contents = remote.read(80).decode('ascii').strip()
         if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.]+)?', contents):
@@ -1596,7 +1596,15 @@ async def terminal(ws: WebSocket, aid: str):
                 task.result()
     except HTTPException as error:
         try:
-            code = 'ssh_auth_rejected' if error.status_code == 502 and str(error.detail).startswith('SSH authentication rejected') else 'ssh_connection_error'
+            detail = str(error.detail)
+            if error.status_code == 409 and detail.startswith('SSH host is not trusted'):
+                code = 'ssh_host_unknown'
+            elif error.status_code == 409 and detail.startswith('SSH host key changed'):
+                code = 'ssh_host_changed'
+            elif error.status_code == 502 and detail.startswith('SSH authentication rejected'):
+                code = 'ssh_auth_rejected'
+            else:
+                code = 'ssh_connection_error'
             await ws.send_json({'type': 'error', 'code': code, 'message': str(error.detail)})
         except Exception:
             pass
