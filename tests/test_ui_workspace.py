@@ -56,7 +56,7 @@ def test_accessibility_and_viewports():
     assert 'id="workbenchSessionsToggle"' in HTML
 
 def test_release_integrity():
-    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.7-dev.1' in (ROOT/'compose.yaml').read_text()
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.8-dev.1' in (ROOT/'compose.yaml').read_text()
     assert 'container_name:' not in (ROOT/'compose.yaml').read_text()
     assert 'environment:' not in (ROOT/'compose.yaml').read_text()
     assert '/var/run/docker.sock' not in (ROOT/'compose.yaml').read_text()

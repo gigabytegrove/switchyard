@@ -8,9 +8,9 @@ CSS=(ROOT/'static/style.css').read_text()
 JS=(ROOT/'static/app.js').read_text()
 
 def test_restored_brand_and_versioned_assets():
-    assert 'href="/static/style.css?v=0.5.7-dev.1"' in HTML
-    assert 'src="/static/app.js?v=0.5.7-dev.1"' in HTML
-    assert '0.5.7-dev.1' in HTML
+    assert 'href="/static/style.css?v=0.5.8-dev.1"' in HTML
+    assert 'src="/static/app.js?v=0.5.8-dev.1"' in HTML
+    assert '0.5.8-dev.1' in HTML
     assert 'src="/static/switchyard-mark.webp"' in HTML
     assert 'station-monogram' not in HTML
     assert '--sw-logo-red:#bc293a' in CSS
@@ -50,3 +50,17 @@ def test_inventory_starts_independently():
     assert 'await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops()])' in JS
     assert "const [assets,info] = await Promise.all([api('/assets')" in JS
     assert 'void refreshDesktopGateway().catch(showError)' in JS
+
+
+def test_multiconnect_layout_and_direct_host_launch():
+    for markup in ('id="terminalLayoutMode"', '<option value="2">Split 2</option>',
+                   '<option value="4">Grid 4</option>'):
+        assert markup in HTML
+    for selector in ('.terminal-panels.multiconnect', '.terminal-host.multi-visible',
+                     '.tree-machine-row', '.tree-machine-quick'):
+        assert selector in CSS
+    assert 'function terminalLayoutSelection()' in JS
+    assert 'function applyTerminalLayout()' in JS
+    assert 'function renderTabs()' in JS
+    assert "if(normalizedHost(t.asset.host)===state.machineHost)" in JS
+    assert 'connect(a.id,{newSession:true})' in JS
