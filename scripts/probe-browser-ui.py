@@ -121,10 +121,22 @@ def run():
                   return true;
                 })()""")
                 started = time.monotonic()
-                cdp.until("""!!document.querySelector('#shell:not(.hidden)') &&
-                  !!document.querySelector('#page-machine:not(.hidden)') &&
-                  document.getElementById('machineSwitcher')""",
-                          "default two-pane Machines + Connections workbench")
+                try:
+                    cdp.until("""!!document.querySelector('#shell:not(.hidden)') &&
+                      !!document.querySelector('#page-machine:not(.hidden)') &&
+                      document.getElementById('machineSwitcher')""",
+                              "default two-pane Machines + Connections workbench",timeout=12)
+                except AssertionError:
+                    diagnostics=cdp.eval("""(function(){
+                      const shell=document.getElementById('shell'),page=document.getElementById('page-machine');
+                      return {shellClass:shell?.className,pageClass:page?.className,
+                        message:document.getElementById('loginError')?.textContent,
+                        machineHost:typeof state==='object'?state.machineHost:'unavailable',
+                        page:typeof state==='object'?state.page:'unavailable',
+                        machineTree:!!document.getElementById('machineSwitcher')};
+                    })()""")
+                    print(f"WORKSPACE STARTUP DIAGNOSTICS: {diagnostics}; exceptions={cdp.uncaught}",flush=True)
+                    raise
                 print(f"PASS: login -> two-pane workbench in {time.monotonic()-started:.2f}s",flush=True)
                 record = cdp.eval("""(async function(){
                     const created=await api('/assets',{method:'POST',body:{
