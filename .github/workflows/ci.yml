@@ -113,7 +113,9 @@ jobs:
           print('PASS: clean first boot, claim code, account setup, login, and persistent network configuration')
           PY
       - name: Exercise responsive console in real headless Chrome
-        run: timeout 90s python3 scripts/probe-browser-ui.py
+        run: |
+          python3 -m pip install --disable-pip-version-check websockets==16.0
+          timeout 90s python3 scripts/probe-browser-ui.py
       - name: Upload responsive UI screenshots for visual review
         if: always()
         uses: actions/upload-artifact@v4
