@@ -124,7 +124,7 @@ def run():
                 try:
                     cdp.until("""!!document.querySelector('#shell:not(.hidden)') &&
                       !!document.querySelector('#page-machine:not(.hidden)') &&
-                      document.getElementById('machineSwitcher')""",
+                      !!document.getElementById('machineSwitcher')""",
                               "default two-pane Machines + Connections workbench",timeout=12)
                 except AssertionError:
                     diagnostics=cdp.eval("""(function(){
