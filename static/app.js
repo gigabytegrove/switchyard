@@ -521,7 +521,7 @@ function renderMachineInfo() {
 function renderWorkbenchSessions() {
   const nav=$('#workbenchSessions');if(!nav)return;nav.replaceChildren();
   const dockToggle=$('#workbenchSessionsToggle');
-  if (dockToggle) dockToggle.textContent=state.sessionDockOpen?'Hide sessions':'Sessions ('+(state.tabs.size+desktopTabs.size)+')';
+  if (dockToggle) dockToggle.textContent=state.sessionDockOpen?'Hide tabs':'Tabs ('+(state.tabs.size+desktopTabs.size)+')';
   const home=button('⌂  Connections','workbench-session-tab'+(state.machineTab==='overview'?' active':''),()=>machineTab('overview'));
   home.setAttribute('role','tab');home.setAttribute('aria-selected',String(state.machineTab==='overview'));nav.append(home);
   for(const [id,session] of state.tabs){
@@ -628,10 +628,11 @@ function syncWorkspaceChrome() {
   const focusToggle=$('#workbenchFocusToggle');
   focusToggle.disabled = !session;
   focusToggle.setAttribute('aria-pressed',String(focused));
-  focusToggle.textContent=focused?'Show controls':'Focus view';
+  focusToggle.textContent=focused?'Controls':'Focus';
+  focusToggle.setAttribute('aria-label',focused?'Show full controls':'Focus session view');
   const dockToggle=$('#workbenchSessionsToggle');
   dockToggle.setAttribute('aria-expanded',String(state.sessionDockOpen === true));
-  dockToggle.textContent=state.sessionDockOpen?'Hide sessions':'Sessions ('+(state.tabs.size+desktopTabs.size)+')';
+  dockToggle.textContent=state.sessionDockOpen?'Hide tabs':'Tabs ('+(state.tabs.size+desktopTabs.size)+')';
   if (session) requestAnimationFrame(() => requestAnimationFrame(fitVisibleSession));
 }
 function machineTab(tab){
