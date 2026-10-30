@@ -272,7 +272,10 @@ function machines() {
   return [...map.values()].sort((a,b) => (a.ssh[0]?.label || a.desktops[0]?.label || a.host).localeCompare(b.ssh[0]?.label || b.desktops[0]?.label || b.host));
 }
 function renderMachineDirectory() {
-  const target = $('#machineDirectory'); target.replaceChildren();
+  // The old directory page was removed; never build an invisible second machine roster.
+  const target = $('#machineDirectory');
+  if (!target || target.closest('[hidden]')) return;
+  target.replaceChildren();
   const query = ($('#machineSearch')?.value || '').trim().toLowerCase();
   const all = machines();
   const environmentSelect = $('#machineEnvironment'); const selectedEnvironment = environmentSelect.value;
