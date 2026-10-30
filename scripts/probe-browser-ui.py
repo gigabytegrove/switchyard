@@ -213,6 +213,7 @@ def run():
                 })()"""), "top menu Find did not focus left Machines panel"
                 cdp.call("Emulation.setDeviceMetricsOverride",
                          width=360,height=900,deviceScaleFactor=1,mobile=False)
+                cdp.eval("setMachineTreeOpen(false)")
                 assert cdp.eval("""(function(){
                   const toggle=document.getElementById('machineTreeToggle');
                   toggle.click();
