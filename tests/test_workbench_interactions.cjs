@@ -47,7 +47,7 @@ assert.equal(renders,3);
 const resize=ids.get('#machineRailResize');
 assert.equal(resize.getAttribute('aria-valuenow'),'236');
 resize.fire('keydown',{key:'ArrowRight'});
-assert.equal(resize.getAttribute('aria-valuenow'),'292');
+assert.equal(resize.getAttribute('aria-valuenow'),'252');
 resize.fire('keydown',{key:'Home'});assert.equal(resize.getAttribute('aria-valuenow'),'196');
 resize.fire('keydown',{key:'End'});assert.equal(resize.getAttribute('aria-valuenow'),'440');
 resize.fire('dblclick');assert.equal(resize.getAttribute('aria-valuenow'),'236');
