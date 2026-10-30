@@ -33,6 +33,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 from . import desktops
+from .probes import probe
 from urllib.parse import urlsplit
 
 from argon2 import PasswordHasher
@@ -820,6 +821,52 @@ class SSHInventoryImport(BaseModel):
     format: Literal['switchyard-ssh-v1']
     folders: list[dict] = Field(default_factory=list, max_length=300)
     assets: list[dict] = Field(default_factory=list, max_length=1000)
+
+
+
+class SSHBatchProbe(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=20)
+
+    @field_validator('ids')
+    @classmethod
+    def validate_ids(cls, ids):
+        if len(ids) != len(set(ids)):
+            raise ValueError('Duplicate machine IDs')
+        for aid in ids:
+            try:
+                uuid.UUID(aid)
+            except ValueError as exc:
+                raise ValueError('Invalid machine ID') from exc
+        return ids
+
+
+@app.post('/api/assets/probes')
+async def ssh_probe_batch(body: SSHBatchProbe, _=Depends(require_auth)):
+    targets = [fetch_asset(aid) for aid in body.ids]
+    limit = asyncio.Semaphore(4)
+
+    async def check(asset):
+        async with limit:
+            result = await probe(asset['host'], asset['port'])
+            return {'id': asset['id'], 'label': asset['label'],
+                    'host': asset['host'], 'port': asset['port'],
+                    'reachable': result['reachable'], 'elapsed_ms': result['elapsed_ms'],
+                    'message': 'TCP port reachable; SSH identity and authentication not tested'
+                    if result['reachable'] else result['message']}
+    results = await asyncio.gather(*(check(a) for a in targets))
+    audit('ssh.probe.batch', str(len(results)))
+    return {'count': len(results), 'results': results}
+
+
+@app.post('/api/assets/{aid}/probe')
+async def ssh_probe_one(aid: str, _=Depends(require_auth)):
+    asset = fetch_asset(aid)
+    result = await probe(asset['host'], asset['port'])
+    audit('ssh.probe', aid, 'success' if result['reachable'] else 'failed')
+    return {'id': aid, 'host': asset['host'], 'port': asset['port'],
+            'reachable': result['reachable'], 'elapsed_ms': result['elapsed_ms'],
+            'message': 'TCP port reachable; SSH identity and authentication not tested'
+            if result['reachable'] else result['message']}
 
 
 @app.get('/api/assets/export')
