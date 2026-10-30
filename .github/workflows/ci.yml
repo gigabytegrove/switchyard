@@ -1,4 +1,7 @@
 name: Switchyard quality gates
+concurrency:
+  group: switchyard-${{ github.ref }}
+  cancel-in-progress: true
 on:
   push:
     branches: [main, master]
@@ -128,7 +131,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish verified application image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: docker push ghcr.io/gigabytegrove/switchyard:0.5.4-dev.1
+        run: |
+          current="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "::error::Refusing to publish stale image for $GITHUB_SHA (main=$current)"
+            exit 1
+          fi
+          docker push ghcr.io/gigabytegrove/switchyard:0.5.4-dev.1
       - name: Capture Compose logs on failure
         if: failure()
         run: docker compose logs --tail=200 || true
