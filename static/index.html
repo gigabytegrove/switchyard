@@ -7,11 +7,11 @@
   <title>SwitchYard · Remote connections</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/xterm.css">
-  <link rel="stylesheet" href="/static/style.css?v=0.5.8-dev.1">
+  <link rel="stylesheet" href="/static/style.css?v=0.5.9-dev.1">
     <script src="/static/xterm.js" defer></script>
   <script src="/static/addon-fit.js" defer></script>
   <script src="/static/guacamole.js" defer></script>
-  <script src="/static/app.js?v=0.5.8-dev.1" defer></script>
+  <script src="/static/app.js?v=0.5.9-dev.1" defer></script>
 </head>
 <body>
   <div id="toast" role="status" aria-live="polite"></div>
@@ -110,9 +110,9 @@ http://ops.home.arpa:9791"></textarea>
     <main class="body-pane">
       <div class="topbar">
         <div class="breadcrumb"><span class="crumb-prefix">WORKSPACE</span><b aria-hidden="true">/</b><strong id="bread">Machines</strong></div>
-        <div class="top-right"><span class="station-version" id="stationVersion">0.5.8-dev.1</span><span id="clock"></span></div>
+        <div class="top-right"><span class="station-version" id="stationVersion">0.5.9-dev.1</span><span id="clock"></span></div>
       </div>
-      <section id="page-machines" class="page machine-directory-page" aria-labelledby="machineDirectoryTitle">
+      <section id="page-machines" class="page machine-directory-page hidden" hidden aria-hidden="true" aria-labelledby="machineDirectoryTitle">
         <div class="directory-hero"><div class="directory-hero-copy"><p class="directory-index">MACHINE DIRECTORY <span aria-hidden="true">—</span> YOUR NETWORK, ONE PLACE</p><h1 id="machineDirectoryTitle">Where to?</h1><p>Choose a system. Start a session. Get straight to work.</p></div>
           <div class="directory-hero-status"><span class="hero-status-symbol" aria-hidden="true">↗</span><strong id="machineCount" role="status">Loading inventory</strong><small>SSH, RDP, VNC and SPICE connections</small></div></div>
         <div class="directory-content">
@@ -130,7 +130,7 @@ http://ops.home.arpa:9791"></textarea>
         <div id="machineLayout" class="machine-layout">
           <div class="machine-work-area">
             <header class="workbench-command-bar">
-              <button id="machineBackToDirectory" type="button" class="workbench-back" aria-label="Return to machine directory">← <span>All machines</span></button>
+              <button id="machineBackToDirectory" type="button" class="workbench-back" aria-label="Hide or show Machines panel" title="Hide or show Machines panel">☰</button>
               <div class="workbench-machine-identity"><div class="workbench-machine-text"><h1 id="machineTitle">Select a machine</h1><div class="machine-compact-meta"><span id="machineAddress" class="mono">Select an entry in the machine directory</span><span id="machineAvailability" role="status"></span><span id="machineFolderLabel" class="hidden"></span></div></div></div>
               <div class="machine-masthead-actions">
                 <button id="machinePrimaryConnect" type="button" class="action-primary">New SSH</button>
@@ -153,8 +153,8 @@ http://ops.home.arpa:9791"></textarea>
           </div>
           <div class="machine-rail-resize" id="machineRailResize" role="separator" aria-label="Resize connections directory" aria-orientation="vertical" aria-valuemin="196" aria-valuemax="440" aria-valuenow="276" tabindex="-1" hidden></div>
           <aside class="machine-context" aria-label="Switch machine">
-            <div class="workbench-tree-head"><div class="tree-title"><strong>Switch machine</strong><span id="treeMachineCount">0 machines</span></div><div class="tree-actions"><button id="treeNewFolder" type="button" class="tree-icon-btn" title="Create folder" aria-label="Create folder">⊕</button><button id="treeNewMachine" type="button" class="tree-icon-btn" title="Add machine" aria-label="Add machine">＋</button><button id="treeClose" type="button" class="tree-icon-btn" aria-label="Close machine switcher">×</button></div></div>
-            <label class="sr-only" for="machineSwitchSearch">Search machines and folders</label><input id="machineSwitchSearch" type="search" placeholder="Type a name, address, or folder" autocomplete="off" aria-controls="machineSwitcher"><nav id="machineSwitcher" class="connection-tree" aria-label="Machines and folders"></nav><div class="tree-foot"><kbd class="tree-shortcut">Ctrl K</kbd> Find a machine</div>
+            <div class="workbench-tree-head"><div class="tree-title"><strong>Machines</strong><span id="treeMachineCount">0 machines</span></div><div class="tree-actions"><button id="treeNewFolder" type="button" class="tree-icon-btn" title="Create folder" aria-label="Create folder">⊕</button><button id="treeNewMachine" type="button" class="tree-icon-btn" title="Add machine" aria-label="Add machine">＋</button><button id="treeClose" type="button" class="tree-icon-btn" aria-label="Close machine switcher">×</button></div></div>
+            <label class="sr-only" for="machineSwitchSearch">Search machines and folders</label><input id="machineSwitchSearch" type="search" placeholder="Type a name, address, or folder" autocomplete="off" aria-controls="machineSwitcher"><nav id="machineSwitcher" class="connection-tree" aria-label="Machines and folders"></nav><div class="tree-foot"><kbd class="tree-shortcut">Ctrl K</kbd> Search machines</div>
           </aside>
         </div>
       </section>

@@ -352,6 +352,7 @@ function setFolderFolded(id,folded){
 function setMachineTreeOpen(open){
   const expanded=!!open;
   $('#machineLayout').classList.toggle('tree-open',expanded);
+  $('#treeClose').setAttribute('aria-label',expanded?'Collapse Machines panel':'Expand Machines panel');
   $('#machineTreeToggle').setAttribute('aria-expanded',String(expanded));
   $('#machineTreeToggle').setAttribute('aria-label',expanded?'Hide machine directory':'Show machine directory');
 }
@@ -394,7 +395,10 @@ function initMachineRail(){
     applyWidth(event.key==='Home'?196:event.key==='End'?440:previous+(event.key==='ArrowLeft'?-16:16));
   });
   $('#treeClose').addEventListener('click', () => setMachineTreeOpen(false));
-  $('#machineBackToDirectory').addEventListener('click', () => navigate('machines'));
+  $('#machineBackToDirectory').addEventListener('click', () => {
+    const open=!layout.classList.contains('tree-open');
+    setMachineTreeOpen(open);if(open)field.focus();
+  });
   $('#machineTreeToggle').addEventListener('click',()=>{
     const next=!layout.classList.contains('tree-open');
     setMachineTreeOpen(next);if(next)field.focus();
@@ -468,7 +472,11 @@ function renderMachineSwitcher() {
     const title=m.ssh[0]?.label||m.desktops[0]?.label||m.host;
     const row=node('div','tree-machine-row');
     row.style.setProperty('--tree-level',String(level));
-    const item=button('','tree-machine'+(m.host===state.machineHost?' active':''),()=>openMachine(m.host));
+    const item=button('','tree-machine'+(m.host===state.machineHost?' active':''),()=>{
+      openMachine(m.host);
+      if(m.ssh.length)connect(m.ssh[0].id).catch(showError);
+      else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);
+    });
     item.setAttribute('aria-label',`Select ${title}, ${m.host}`);item.title=`${title} · ${m.host}`;
     if(m.host===state.machineHost)item.setAttribute('aria-current','page');
     const launch=()=>{
@@ -476,7 +484,7 @@ function renderMachineSwitcher() {
       if(m.ssh.length)connect(m.ssh[0].id).catch(showError);
       else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);
     };
-    item.addEventListener('dblclick',launch);
+    // One click opens the connection; double-click needs no separate handler.
     const copy=node('span','tree-machine-copy');copy.append(node('strong','',title),node('small','mono',m.host));
     item.append(node('span','tree-machine-icon',m.ssh.length?'▣':'▤'),copy);
     const quick=button(m.ssh.length?'SSH ↗':m.desktops.length?'Open ↗':'Select','tree-machine-quick',launch);
@@ -575,7 +583,7 @@ function updateTerminalStatus() {
 
 function openMachine(host){
   state.machineHost=normalizedHost(host);
-  setMachineTreeOpen(false);
+  if(window.matchMedia('(max-width:760px)').matches)setMachineTreeOpen(false);
   const asset=machineAsset();
   for(const id of ['fileAsset','dockerAsset','healthAsset','serviceAsset'])if(asset)$('#'+id).value=asset.id;
   $('#filePath').value='.';
@@ -633,6 +641,7 @@ function syncWorkspaceChrome() {
   const focused = session && state.focusPreferred !== false;
   $('#shell').classList.toggle('workbench-open',workspace);
   $('#shell').classList.toggle('session-focus',focused);
+  $('#shell').classList.toggle('two-pane-workbench',workspace);
   $('#machineLayout').classList.toggle('session-dock-open',state.sessionDockOpen === true);
   const focusToggle=$('#workbenchFocusToggle');
   focusToggle.disabled = !session;
@@ -682,11 +691,13 @@ function setLogin() {
 async function setShell() {
   $('#setup').classList.add('hidden'); $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   // Fetch independent inventory sources concurrently instead of serial startup roundtrips.
-  navigate('machines');
+  navigate('machine');
   await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops()]);
   state.machineHost = machines()[0]?.host || null;
-  updateMachineHeader(); renderMachineOverview(); renderDesktopList();
-  navigate('machines'); machineTab('overview');
+  updateMachineHeader();renderMachineOverview();renderDesktopList();
+  navigate('machine');machineTab('overview');
+  setMachineTreeOpen(!window.matchMedia('(max-width:760px)').matches);
+  renderMachineSwitcher();
 }
 async function refreshAssets() {
   const [assets,info] = await Promise.all([api('/assets'),api('/overview').catch(() => null)]);
@@ -701,7 +712,8 @@ async function refreshAssets() {
 }
 function navigate(page) {
   if (page === 'vault') { navigate('settings'); settingsTab('integrations'); return; }
-  // Machines is the actual directory screen; a machine opens its own desk.
+  // Machines is always the two-pane workbench. There is no directory landing route.
+  if (page === 'machines') page = 'machine';
   if (['terminals','desktops'].includes(page)) {
     if (!state.machineHost) {navigate('machine');machineTab('overview');return;}
     navigate('machine'); machineTab(page); return;
@@ -2278,11 +2290,7 @@ function bind() {
   window.addEventListener('keydown', event => {
     if (event.key === 'Escape') closeGlobalNavigation();
   });
-  $('#globalFind').addEventListener('click', () => {
-    navigate('machines');
-    $('#machineSearch').focus();
-    $('#machineSearch').select();
-  });
+  $('#globalFind').addEventListener('click', () => focusMachineSearch());
   $('#machineCommandMenu').addEventListener('click', event => {
     if (event.target.closest('button')) $('#machineCommandMenu').open = false;
   });
