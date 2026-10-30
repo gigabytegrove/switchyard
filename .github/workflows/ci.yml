@@ -116,8 +116,7 @@ jobs:
         run: |
           container_id="$(docker compose ps -q switchyard)"
           test -n "$container_id"
-          docker cp scripts/ci-ssh-target.py "$container_id:/tmp/ci-ssh-target.py"
-          docker exec -d "$container_id" /opt/venv/bin/python /tmp/ci-ssh-target.py
+          docker exec -d "$container_id" /opt/venv/bin/python -c "$(cat scripts/ci-ssh-target.py)"
           python3 scripts/probe-ssh-terminal.py
       - name: Authenticate to GitHub Container Registry
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
