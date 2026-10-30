@@ -47,8 +47,10 @@ def test_accessibility_and_viewports():
     for p in (1280,980,760,540,390):
         assert f'@media(max-width:{p}px)' in CSS
     assert ':focus-visible' in CSS and 'prefers-reduced-motion:reduce' in CSS
-    for asset in ('switchyard-mark.webp','switchyard-wordmark.webp','favicon.png'):
+    for asset in ('switchyard-wordmark.webp','favicon.png'):
         assert asset in HTML and (ROOT/'static'/asset).stat().st_size>5000
+    # Station 02 uses a CSS/native monogram rather than the former inline mark.
+    assert 'station-monogram' in HTML
 
 def test_release_integrity():
     assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.6-dev.1' in (ROOT/'compose.yaml').read_text()
