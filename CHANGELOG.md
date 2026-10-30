@@ -1,3 +1,12 @@
+## 0.5.5-dev.1 (2026-10-30)
+
+- Rebuilt the Switchyard experience from the ground up: unified graphite and signal-red visual system, new operator navigation, persistent machine rack, full-height session work surface, reorganized action menus, mobile drawers, accessible focus styling, responsive breakpoints and reduced-motion defaults.
+- Removed the stacked workspace CSS layers and their conflicting responsive overrides; one versioned stylesheet owns the whole interface.
+- Parallelized independent initial inventory requests, made gateway health non-blocking for desktop listing and debounced searchable machine navigation.
+- Preserved all existing application APIs, persisted data, first-run setup, connection protocols and explicit SSH host-trust flow.
+- Added deployment protections for moving the checkout while retaining the same Compose project and data volume, plus regression tests.
+- Verification requires GitHub CI and subsequent live target/UI acceptance; no production certification is implied.
+
 ## 0.5.4-dev.1 (2026-10-30)
 
 - CI release hardening: cancel superseded pushes and reject publishing images whose commit is no longer current main.

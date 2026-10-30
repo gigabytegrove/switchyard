@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 HTML=(ROOT/'static/index.html').read_text()
 JS=(ROOT/'static/app.js').read_text()
-CSS=(ROOT/'static/workspace.css').read_text()
+CSS=(ROOT/'static/style.css').read_text()
 
 class Dom(HTMLParser):
     def __init__(self):
@@ -24,7 +24,7 @@ def test_permanent_machine_tree_and_connection_canvas():
                  'machineInfoToggle','machinePrimaryConnect'):
         assert item in dom.ids
     assert 'machine-layout' in HTML and 'machine-context' in HTML and 'machine-work-area' in HTML
-    assert 'grid-template-columns:var(--wb-rail) minmax(0,1fr)' in CSS
+    assert 'grid-template-columns:minmax(196px,var(--wb-rail)) 7px minmax(0,1fr)' in CSS
     assert 'function renderMachineSwitcher()' in JS
     assert 'tree-folder-toggle' in JS and 'foldedFolders' in JS
     assert 'tree-machine' in JS and 'dblclick' in JS
@@ -53,14 +53,14 @@ def test_brand_assets_and_mobile_breakpoints():
     for asset in ('switchyard-mark.webp','switchyard-wordmark.webp','favicon.png'):
         assert asset in HTML
         assert (ROOT/'static'/asset).stat().st_size > 5000
-    for point in ('max-width:1000px','max-width:760px','max-width:520px'):
+    for point in ('max-width:1120px','max-width:840px','max-width:620px','max-width:420px'):
         assert point in CSS
     assert 'prefers-reduced-motion:reduce' in CSS
     assert ':focus-visible' in CSS
 
 def test_deployment_preserves_externally_unconfigured_image():
     compose=(ROOT/'compose.yaml').read_text()
-    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.4-dev.1' in compose
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.5-dev.1' in compose
     assert 'container_name:' not in compose
     assert 'environment:' not in compose
     assert '.env' not in compose

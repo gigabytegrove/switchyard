@@ -399,7 +399,6 @@ dialog.editor-dialog .command-input {height:min(48dvh,540px);min-height:240px}
   .workbench-command-bar {padding-inline:12px;gap:9px}
   .workbench-machine-text h1 {font-size:18px}
   .machine-masthead-actions {gap:5px}
-  #machineInfoToggle {display:none}
   .top-right .online {display:none}
 }
 @media(max-width:840px) {
@@ -441,7 +440,7 @@ dialog.editor-dialog .command-input {height:min(48dvh,540px);min-height:240px}
   .tree-mobile-toggle {display:inline-flex;align-items:center}
   .workbench-command-bar {padding:6px 9px;min-height:65px;gap:7px}
   .workbench-glyph,.machine-compact-meta #machineFolderLabel {display:none!important}
-  .machine-masthead-actions .action-quiet {display:none}
+  .machine-masthead-actions > .action-quiet {display:none}
   .machine-masthead-actions #machinePrimaryConnect {min-width:86px;padding:6px 9px}
   .workbench-machine-text h1 {font-size:16px}
   .machine-compact-meta {font-size:10px;max-width:32vw}

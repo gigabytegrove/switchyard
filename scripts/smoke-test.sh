@@ -31,7 +31,7 @@ check_http /api/setup/status 'Setup status endpoint responds'
 check_http /static/guacamole.js 'Guacamole browser runtime is packaged'
 check_http /static/spice/main.js 'SPICE HTML5 browser runtime is packaged'
 check_http /static/spice-view.html 'SPICE viewer responds'
-check_http /static/workspace.css 'Machine workspace stylesheet is packaged'
+check_http /static/style.css 'Unified operations desk stylesheet is packaged'
 "${CURL[@]}" -D "$TEMP/headers" -o /dev/null "$BASE/static/spice-view.html"
 grep -Eiq '^x-frame-options:[[:space:]]*SAMEORIGIN' "$TEMP/headers" || {
   echo 'FAIL: SPICE frame policy not configured' >&2; exit 1;
@@ -48,4 +48,4 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   fi
   echo 'PASS: guacd has no published host port'
 fi
-echo 'PASS: non-destructive Switchyard v0.5.4-dev.1 smoke checks complete'
+echo 'PASS: non-destructive Switchyard v0.5.5-dev.1 smoke checks complete'

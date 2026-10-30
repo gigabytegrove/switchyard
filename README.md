@@ -7,7 +7,7 @@
 Self-hosted machine profiles with SSH, SFTP, Docker, Linux health, and remote desktops (RDP, VNC, SPICE). Optional encrypted stored passwords and Vaultwarden integration.
 
 [![Source tests and Docker build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.5.3--dev.6-B72237)
+![Version](https://img.shields.io/badge/version-0.5.5--dev.1-BC293A)
 ![Docker](https://img.shields.io/badge/deployment-Docker-B72237?logo=docker)
 ![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-5934AC)
 ![Status](https://img.shields.io/badge/status-development-orange)
@@ -17,6 +17,14 @@ Self-hosted machine profiles with SSH, SFTP, Docker, Linux health, and remote de
 </div>
 
 > **Development build, not production-certified.** Source tests and selected deployment contracts can pass without proving live SSH/RDP/VNC/SPICE connectivity or complete hypervisor/OS compatibility. Restrict the host TCP 9791 port to your LAN, and do not expose it directly to the public Internet.
+
+## Operations desk redesign — 0.5.5-dev.1
+
+Switchyard now uses a new control-room interface rather than its accumulated header/rail layouts. The design is intentionally a warm-white, silver and graphite technical workbench with signal-red actions. The rebuilt command rail keeps all operational tools visible; the searchable machine rack is resizable on desktop and becomes a drawer on small screens; SSH and remote desktop sessions occupy a dedicated uninterrupted stage with persistent session tabs. Machine maintenance actions are grouped into an accessible Actions menu rather than crowding the connection toolbar. The new navigation search control opens the machine rack and focuses its search field. Browser preferences remain local and all saved configuration stays in the existing Docker volume.
+
+**Loading:** Independent folder, asset, and desktop inventories now load concurrently. Asset and overview summaries fetch in parallel, and gateway checks do not block the desktop inventory. The tree search is debounced to avoid rendering on each keystroke. These are client-side improvements, not claims of reduced SSH handshake latency. This release requires live target validation of SSH, RDP/VNC/SPICE, and actual browser layout at 360px, 620px, 840px, and desktop widths. No new public endpoints or backend data migrations are introduced.
+
+**Relocated checkout:** If you moved the Git checkout, retain `/opt/switchyard/.env` containing the original `COMPOSE_PROJECT_NAME`. This preserves the existing named data volume; `scripts/deploy.sh` refuses a mismatch. Normal first-time installs require no `.env`.
 
 ## Quick start
 
@@ -104,7 +112,7 @@ The Machines directory is now the primary navigation destination. The host-first
 
 At ≤920px, the machine switcher becomes a horizontally scrollable strip; at ≤660px, the header and actions reorganize for touch and small screens. All machine tabs are keyboard accessible (arrow keys, Home, End), with visible focus and reduced-motion support.
 
-The machine-specific workspace rules are in `static/workspace.css`, loaded after the existing product stylesheet. The UI does not claim that a machine is live or healthy until a real connection or host check has succeeded.
+The original layered workspace stylesheets were replaced by one cohesive stylesheet: `static/style.css`. The UI does not claim that a machine is live or healthy until a real connection or host check has succeeded.
 
 ## Features
 
