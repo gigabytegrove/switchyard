@@ -5,3 +5,7 @@ argon2-cffi==25.1.0
 python-multipart==0.0.32
 cryptography==46.0.4
 qrcode==8.2
+
+# Required for real browser WebSocket upgrades (SSH and guacd tunnels).
+# Base uvicorn provides HTTP but does NOT install a WebSocket protocol.
+websockets==16.0

@@ -1,3 +1,11 @@
+## 0.5.3-dev.5 — restore real network WebSocket connections
+
+- **Root-cause fix:** The Docker image installed bare `uvicorn` without any Python WebSocket protocol implementation. HTTP health/setup worked while the browser terminal WebSocket upgrade failed before SSH authentication.
+- Install pinned `websockets==16.0` in the actual runtime image. This enables Uvicorn's WebSocket ASGI protocol for SSH terminals and Guacamole tunnels.
+- Add a true TCP-network acceptance test against the built, running Docker Compose container: first-run login, authorized WebSocket HTTP 101 upgrade, WebSocket auth message handling and unauthenticated rejection. Unlike TestClient, this catches missing protocol packages.
+- Make pre-upgrade failures distinguishable from an established SSH transport failure.
+- Preserve machine folders, stored credentials, host trust, UI layout and the original persistent volume. No manual migration.
+
 ## 0.5.3-dev.4 — stop replaying rejected SSH passwords
 
 - Fix endless SSH login failures caused by caching a rejected temporary password and silently reusing it during reconnect.

@@ -773,8 +773,10 @@ async function connect(aid, {newSession = false} = {}) {
   tab.reportedServerError=false;
   tab.terminal.writeln('\r\nSwitchyard · connecting to '+asset.host);
   renderTabs();updateTerminalStatus();
+  let upgraded=false;
   ws.onopen=()=>{
     if(tab.ws!==ws)return;
+    upgraded=true;
     ws.send(JSON.stringify({type:'auth',password}));
     password=null;
     ws.send(JSON.stringify({type:'resize',cols:tab.terminal.cols,rows:tab.terminal.rows}));
@@ -809,8 +811,11 @@ async function connect(aid, {newSession = false} = {}) {
     password=null;
     // A server-side rejection is more useful than a generic WebSocket error.
     if(tab.reportedServerError)return;
-    tab.terminal.writeln('\r\n\x1b[31mConnection transport failed. Check your network or reverse proxy.\x1b[0m');
-    toast('Connection transport failed for '+asset.host+'.',true);
+    const reason=upgraded
+      ? 'SSH WebSocket transport disconnected after connecting.'
+      : 'Switchyard WebSocket handshake failed. Confirm the container has WebSocket support and that any reverse proxy forwards Upgrade and Connection headers.';
+    tab.terminal.writeln('\r\n\x1b[31m'+reason+'\x1b[0m');
+    toast(reason,true);
   };
   ws.onclose=()=>{
     if(tab.ws!==ws)return;
