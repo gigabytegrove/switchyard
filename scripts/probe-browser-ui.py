@@ -300,6 +300,72 @@ def run():
                   return expanded && document.getElementById('shell').classList.contains('session-focus');
                 })()"""), "focus toggle/F8 failed to restore the full viewport"
 
+
+                # Render actual, independent xterm instances from different
+                # machines side-by-side and in a four-cell grid. No remote
+                # connection is attempted; SSH transport is tested separately.
+                assert cdp.eval("""(function(){
+                  const source=state.assets.find(a=>a.host==='192.0.2.48');
+                  if(!source)return false;
+                  for(let i=2;i<=4;i++){
+                    const asset={...source,id:10000+i,host:'192.0.2.'+(48+i),
+                      label:'QA secondary '+i};
+                    state.assets.push(asset);
+                    const terminal=new window.Terminal({fontSize:13,scrollback:1000});
+                    const fit=new window.FitAddon.FitAddon();
+                    terminal.loadAddon(fit);
+                    const id='layout-probe-'+i;
+                    state.tabs.set(id,{id,asset,terminal,fit,ws:null});
+                  }
+                  renderTabs();
+                  for(let i=2;i<=4;i++){
+                    const id='layout-probe-'+i,tab=state.tabs.get(id);
+                    const host=document.getElementById('term-'+id);
+                    if(!host)return false;
+                    tab.terminal.open(host);
+                    tab.terminal.write('Independent session '+i+'\\r\\n');
+                  }
+                  return true;
+                })()"""), "multiple host xterm creation failed"
+                for count,mode in ((2,"Split 2"),(4,"Grid 4")):
+                    assert cdp.eval("""(function(count){
+                      const layout=document.getElementById('terminalLayoutMode');
+                      layout.value=String(count);
+                      layout.dispatchEvent(new Event('change',{bubbles:true}));
+                      return state.terminalLayout===count &&
+                        document.getElementById('terminalPanels').classList.contains('multiconnect') &&
+                        layout.options[layout.selectedIndex].textContent=== (count===2?'Split 2':'Grid 4');
+                    })("""+str(count)+""")"""), f"layout mode {mode} did not activate"
+                    cdp.eval("fitVisibleSession()")
+                    split=cdp.eval("""(function(){
+                      const panel=document.getElementById('terminalPanels');
+                      const active=[...panel.querySelectorAll('.terminal-host.multi-visible')].map(el=>{
+                        const rect=el.getBoundingClientRect();
+                        const terminal=el.querySelector('.xterm');
+                        return {id:el.id,display:getComputedStyle(el).display,
+                                width:rect.width,height:rect.height,
+                                rendered:!!terminal&&terminal.getBoundingClientRect().height>0};
+                      });
+                      return {viewport:innerWidth,canvasHeight:panel.getBoundingClientRect().height,
+                        active,columnStyle:getComputedStyle(panel).gridTemplateColumns,
+                        rowStyle:getComputedStyle(panel).gridTemplateRows,
+                        overflow:document.documentElement.scrollWidth};
+                    })()""")
+                    assert len(split["active"])==count,split
+                    assert all(row["rendered"] and row["display"]!="none" for row in split["active"]),split
+                    assert all(row["width"] >= 0.43*split["viewport"] for row in split["active"]),split
+                    assert split["overflow"]<=split["viewport"]+3,split
+                    if count==2:
+                        assert all(row["height"]>=split["canvasHeight"]*.94 for row in split["active"]),split
+                    cdp.screenshot(f"1440-{count}-simultaneous-terminals")
+                    print(f"PASS {mode}: {count} independent live xterm canvases on different hosts",flush=True)
+                # Closing the grid doesn't discard any terminal session.
+                assert cdp.eval("""(function(){
+                  const field=document.getElementById('terminalLayoutMode');
+                  field.value='1';field.dispatchEvent(new Event('change',{bubbles:true}));
+                  return state.tabs.size===4 && !document.getElementById('terminalPanels').classList.contains('multiconnect');
+                })()"""), "return to single view discarded an SSH session"
+
                 cdp.screenshot("360-directory-after-workbench")
                 assert not cdp.uncaught, f"Uncaught browser exceptions: {cdp.uncaught}"
                 print("PASS: Station 02 actual Chrome CSS colors, roster -> full workbench -> roster, "
