@@ -291,14 +291,21 @@ function renderMachineDirectory() {
   for (const machine of matches) (folders.get(machine.folder_id) || folders.get('')).push(machine);
   const renderOne = machine => {
     const name = machine.ssh[0]?.label || machine.desktops[0]?.label || machine.host;
-    const el = button('', 'machine-entry', () => openMachine(machine.host));
     const left = node('span','machine-entry-main');
     left.append(node('strong','', name), node('small','mono',machine.host));
     const types = node('span','machine-protocols');
     if (machine.ssh.length) types.append(node('span','protocol-label','SSH · SFTP'));
     for (const protocol of [...new Set(machine.desktops.map(d => d.protocol))]) types.append(node('span','protocol-label', protocol.toUpperCase()));
-    el.append(node('span','machine-symbol','▣'),left,types,node('span','machine-chevron','→'));
-    return el;
+    const row=node('div','machine-entry');
+    const open=button('','machine-entry-open',()=>openMachine(machine.host));
+    open.setAttribute('aria-label','Open workspace for '+name);
+    open.append(node('span','machine-symbol',machine.ssh.length?'↗':'▤'),left);
+    const access=node('div','machine-access');access.append(types);
+    const actions=node('div','machine-entry-actions');
+    if(machine.ssh.length)actions.append(button('SSH ↗','machine-connect-ssh',()=>connect(machine.ssh[0].id).catch(showError)));
+    if(machine.desktops.length)actions.append(button(machine.desktops[0].protocol.toUpperCase()+' ↗','machine-connect-desktop',()=>openDesktop(machine.desktops[0]).catch(showError)));
+    row.append(open,access,actions);
+    return row;
   };
   const renderFolder = (folderId, depth = 0, visited = new Set()) => {
     if (visited.has(folderId) || depth > 12) return;
@@ -351,7 +358,7 @@ function setMachineTreeOpen(open){
 function focusMachineSearch(){
   if($('#shell').classList.contains('hidden'))return;
   navigate('machine');
-  if(window.matchMedia('(max-width:760px)').matches)setMachineTreeOpen(true);
+  setMachineTreeOpen(true);
   const field=$('#machineSwitchSearch');field.focus();field.select();
 }
 function initMachineRail(){
@@ -386,6 +393,8 @@ function initMachineRail(){
     const previous=Number(handle.getAttribute('aria-valuenow'))||276;
     applyWidth(event.key==='Home'?196:event.key==='End'?440:previous+(event.key==='ArrowLeft'?-16:16));
   });
+  $('#treeClose').addEventListener('click', () => setMachineTreeOpen(false));
+  $('#machineBackToDirectory').addEventListener('click', () => navigate('machines'));
   $('#machineTreeToggle').addEventListener('click',()=>{
     const next=!layout.classList.contains('tree-open');
     setMachineTreeOpen(next);if(next)field.focus();
@@ -425,7 +434,7 @@ function initMachineRail(){
   });
   const tree=$('#machineSwitcher');
   tree.addEventListener('keydown',event=>{
-    const buttons=$('.tree-machine, .tree-folder-toggle',tree);
+    const buttons=$$('.tree-machine, .tree-folder-toggle',tree);
     const index=buttons.indexOf(document.activeElement);
     if(index<0)return;
     if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){
@@ -438,7 +447,7 @@ function initMachineRail(){
       const id=document.activeElement.dataset.folderId,folded=event.key==='ArrowLeft';
       if(foldedFolders.has(id)===folded)return;
       event.preventDefault();setFolderFolded(id,folded);
-      $('.tree-folder-toggle',tree).find(button=>button.dataset.folderId===id)?.focus();
+      $$('.tree-folder-toggle',tree).find(button=>button.dataset.folderId===id)?.focus();
     }
   });
 }
@@ -569,7 +578,7 @@ function renderMachineOverview(){
   if(!state.machineHost){
     const empty=node('div','workbench-welcome');
     empty.append(node('div','workbench-empty-mark','⇄'),node('h2','','Your connections, one workspace.'),
-      node('p','','Select a machine from the directory on the left, or create your first connection.'));
+      node('p','','Return to Machines and choose a system, or create your first connection.'));
     empty.append(button('+ Add machine','action-primary',()=>openAsset()));target.append(empty);return;
   }
   const header=node('header','workbench-connection-heading'),copy=node('div');
@@ -592,7 +601,7 @@ function renderMachineOverview(){
     list.append(action);
   }
   if(!asset&&!desktops.length)list.append(node('div','context-empty','No connection profiles exist for this machine. Add SSH or remote desktop access.'));
-  target.append(list,node('div','workbench-connection-note','Double-click a machine to connect. Ctrl+K searches your machines. Drag the divider to resize the directory. Open sessions remain in the tabs above.'));
+  target.append(list,node('div','workbench-connection-note','Choose a connection to open a session. Open sessions stay in the dock. Use Switch machine to jump to another system.'));
 }
 function machineTab(tab){
   if(['files','docker','health'].includes(tab)){navigate(tab);return;}
@@ -631,10 +640,11 @@ function setLogin() {
 async function setShell() {
   $('#setup').classList.add('hidden'); $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   // Fetch independent inventory sources concurrently instead of serial startup roundtrips.
+  navigate('machines');
   await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops()]);
   state.machineHost = machines()[0]?.host || null;
   updateMachineHeader(); renderMachineOverview(); renderDesktopList();
-  navigate('machine'); machineTab('overview');
+  navigate('machines'); machineTab('overview');
 }
 async function refreshAssets() {
   const [assets,info] = await Promise.all([api('/assets'),api('/overview').catch(() => null)]);
@@ -649,13 +659,14 @@ async function refreshAssets() {
 }
 function navigate(page) {
   if (page === 'vault') { navigate('settings'); settingsTab('integrations'); return; }
-  if (page === 'machines') page = 'machine';
+  // Machines is the actual directory screen; a machine opens its own desk.
   if (['terminals','desktops'].includes(page)) {
     if (!state.machineHost) {navigate('machine');machineTab('overview');return;}
     navigate('machine'); machineTab(page); return;
   }
   state.page = page;
   $('#shell')?.classList.remove('nav-open');
+  for(const menu of $$('.station-dropdown[open]'))menu.open=false;
   $('#navMobileToggle')?.setAttribute('aria-expanded','false');
   $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page || (page === 'machine' && el.dataset.page === 'machines')));
@@ -2102,7 +2113,7 @@ function bind() {
   }));
   $('#loginUsername').addEventListener('focus', () => refreshLoginOptions());
   $('#loginForm').addEventListener('submit', safeAsync(async event => { event.preventDefault(); $('#loginError').textContent = ''; try { await api('/login', { method: 'POST', body: { username: $('#loginUsername').value, password: $('#loginPassword').value, totp: $('#loginTotp').value.trim() } }); $('#loginPassword').value = ''; $('#loginTotp').value = ''; await setShell(); } catch (err) { $('#loginError').textContent = err.message; } }));
-  $$('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
+  $$('[data-page]').forEach(b => b.addEventListener('click', () => { navigate(b.dataset.page); b.closest('details')?.removeAttribute('open'); }));
   const navToggle = $('#navMobileToggle');
   const closeGlobalNavigation = () => {
     $('#shell').classList.remove('nav-open');
@@ -2117,9 +2128,9 @@ function bind() {
     if (event.key === 'Escape') closeGlobalNavigation();
   });
   $('#globalFind').addEventListener('click', () => {
-    navigate('machine');
-    if (window.matchMedia('(max-width:620px)').matches) setMachineTreeOpen(true);
-    $('#machineSwitchSearch').focus();
+    navigate('machines');
+    $('#machineSearch').focus();
+    $('#machineSearch').select();
   });
   $('#machineCommandMenu').addEventListener('click', event => {
     if (event.target.closest('button')) $('#machineCommandMenu').open = false;
