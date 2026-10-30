@@ -8,9 +8,9 @@ CSS=(ROOT/'static/style.css').read_text()
 JS=(ROOT/'static/app.js').read_text()
 
 def test_restored_brand_and_versioned_assets():
-    assert 'href="/static/style.css?v=0.5.8-dev.1"' in HTML
-    assert 'src="/static/app.js?v=0.5.8-dev.1"' in HTML
-    assert '0.5.8-dev.1' in HTML
+    assert 'href="/static/style.css?v=0.5.9-dev.1"' in HTML
+    assert 'src="/static/app.js?v=0.5.9-dev.1"' in HTML
+    assert '0.5.9-dev.1' in HTML
     assert 'src="/static/switchyard-mark.webp"' in HTML
     assert 'station-monogram' not in HTML
     assert '--sw-logo-red:#bc293a' in CSS
@@ -23,6 +23,9 @@ def test_session_is_default_focus_and_can_undock_components():
     assert 'id="workbenchFocusToggle"' in HTML
     assert 'id="workbenchSessionsToggle"' in HTML
     assert 'id="machineTreeToggle"' in HTML
+    assert 'id="page-machines"' not in HTML
+    assert '#shell.session-focus .station-header{display:flex!important}' in CSS
+    assert 'grid-column:1;grid-row:1;' in CSS
     assert 'id="machineInfoDrawer"' in HTML
     assert "readUiPreference(SESSION_FOCUS_PREF,true)" in JS
     assert "session && state.focusPreferred !== false" in JS

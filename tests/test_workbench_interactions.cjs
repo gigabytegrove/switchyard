@@ -9,9 +9,11 @@ const html=fs.readFileSync(path.join(root,'static/index.html'),'utf8');
 const css=fs.readFileSync(path.join(root,'static/style.css'),'utf8');
 for(const key of ['id="machineLayout"','id="machineRailResize"','id="machineTreeToggle"'])
   assert(html.includes(key),key+' must exist in the actual UI');
-assert(css.includes('.machine-layout.tree-open .machine-context'));
-assert(css.includes('.machine-rail-resize{display:none!important}'));
+assert(css.includes('#shell .machine-layout>.machine-context{'));
+assert(css.includes('#shell .machine-layout>.machine-rail-resize{'));
 assert(html.includes('id="treeClose"'));
+assert(!html.includes('id="page-machines"'));
+assert(html.includes('id="page-machine"'));
 assert(css.includes('@media(max-width:540px)'));
 const start=source.indexOf('const TREE_FOLD_KEY');
 const end=source.indexOf('function renderMachineSwitcher()',start);

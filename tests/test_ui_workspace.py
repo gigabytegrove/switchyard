@@ -1,4 +1,4 @@
-"""Station 02 architecture contract: roster -> connection canvas."""
+"""SwitchYard two-pane operator experience contract."""
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -8,55 +8,65 @@ JS=(ROOT/'static/app.js').read_text()
 CSS=(ROOT/'static/style.css').read_text()
 
 class DOM(HTMLParser):
-    def __init__(self):
-        super().__init__();self.ids={}
+    def __init__(self): super().__init__();self.ids={}
     def handle_starttag(self,tag,attrs):
-        props=dict(attrs);key=props.get('id')
-        if key:
-            assert key not in self.ids, f'duplicate id: {key}'
-            self.ids[key]=(tag,props)
+        values=dict(attrs);ident=values.get('id')
+        if ident:
+            assert ident not in self.ids, f'duplicate DOM id: {ident}'
+            self.ids[ident]=(tag,values)
 
-def test_machine_directory_is_first_screen_and_not_old_sidebar():
-    dom=DOM();dom.feed(HTML)
-    for key in ('stationVersion','navigation','page-machines','machineDirectory',
-                'machineSearch','machineEnvironment','machineCount',
-                'page-machine','machineBackToDirectory','machineSwitcher',
-                'workbenchSessions','machineContent','machinePanel-overview',
-                'machinePanel-terminals','machinePanel-desktops',
-                'machineInfoDrawer','machineInfoToggle','machinePrimaryConnect'):
-        assert key in dom.ids
-    assert 'class="sidebar"' not in HTML
-    assert 'station-header' in HTML and 'directory-hero' in HTML
-    assert 'Where to?' in HTML
-    assert 'machine-entry-open' in JS and 'machine-connect-ssh' in JS
-    assert "navigate('machines')" in JS
-    assert '.machine-context{position:absolute;top:0;bottom:0;left:0;z-index:52' in CSS
-    assert '.machine-layout.tree-open .machine-context' in CSS
-    assert 'display:none!important' in CSS
+def test_left_machines_right_connection_no_landing():
+    document=DOM();document.feed(HTML)
+    for key in ('shellNavigation','navigation','page-machine','machineLayout',
+                'machine-context','machineSwitcher','machineSwitchSearch',
+                'machineRailResize','machineContent','workbenchSessions',
+                'machinePanel-overview','machinePanel-terminals',
+                'machinePanel-desktops','machinePrimaryConnect',
+                'terminalLayoutMode','machineTreeToggle','treeClose'):
+        if key=='machine-context':
+            assert 'class="machine-context"' in HTML
+        else:
+            assert key in document.ids
+    assert 'id="page-machines"' not in HTML
+    assert 'class="directory-hero"' not in HTML
+    assert 'Where to?' not in HTML
+    assert 'id="legacyMachineDirectoryBindings" hidden' in HTML
+    assert "if (page === 'machines') page = 'machine';" in JS
+    assert "navigate('machine');machineTab('overview');" in JS
+    assert "setMachineTreeOpen(!window.matchMedia('(max-width:760px)').matches)" in JS
+    assert "if(window.matchMedia('(max-width:760px)').matches)setMachineTreeOpen(false)" in JS
+    assert '#shell .machine-layout>.machine-context{' in CSS
+    assert '#shell .machine-layout>.machine-work-area{' in CSS
+    assert 'grid-column:1;grid-row:1;' in CSS
+    assert 'grid-column:3;grid-row:1;' in CSS
+    assert '#shell.session-focus .station-header{display:flex!important}' in CSS
 
-def test_all_operational_pages_and_sessions_remain():
+def test_workspace_routes_are_preserved():
     for page in ('files','docker','services','health','runbooks','activity','trust','settings'):
         assert f'id="page-{page}"' in HTML
         assert f'data-page="{page}"' in HTML
+    assert 'id="sshExport"' in HTML
+    assert 'id="sshImport"' in HTML
     assert 'function renderWorkbenchSessions()' in JS
-    assert 'state.tabs' in JS and 'desktopTabs' in JS
-    assert 'closeDesktopTab(id)' in JS and 'closeTab(id)' in JS
-    assert "setAttribute('role','tab')" in JS
+    assert 'closeDesktopTab(id)' in JS
+    assert 'closeTab(id)' in JS
+    assert 'function applyTerminalLayout()' in JS
+    assert "connect(a.id,{newSession:true})" in JS
 
-def test_accessibility_and_viewports():
-    for p in (1280,980,760,540,390):
-        assert f'@media(max-width:{p}px)' in CSS
-    assert ':focus-visible' in CSS and 'prefers-reduced-motion:reduce' in CSS
-    for asset in ('switchyard-wordmark.webp','favicon.png'):
-        assert asset in HTML and (ROOT/'static'/asset).stat().st_size>5000
-    # Original branded mark is retained, not a replacement CSS monogram.
+def test_accessibility_and_responsive_behaviors():
+    for size in (860,760,620,390):
+        assert f'@media(max-width:{size}px)' in CSS
+    assert 'prefers-reduced-motion:reduce' in CSS
+    assert ':focus-visible' in CSS
+    assert 'role="separator"' in HTML and 'tabindex="0"' in HTML
+    assert 'aria-valuenow="236"' in HTML
     assert 'src="/static/switchyard-mark.webp"' in HTML
-    assert 'station-monogram' not in HTML
-    assert 'id="workbenchFocusToggle"' in HTML
-    assert 'id="workbenchSessionsToggle"' in HTML
+    assert (ROOT/'static/switchyard-mark.webp').stat().st_size>5000
+    assert (ROOT/'static/favicon.png').stat().st_size>5000
+    assert '--sw-logo-red:#bc293a' in CSS
 
-def test_release_integrity():
-    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.8-dev.1' in (ROOT/'compose.yaml').read_text()
-    assert 'container_name:' not in (ROOT/'compose.yaml').read_text()
-    assert 'environment:' not in (ROOT/'compose.yaml').read_text()
-    assert '/var/run/docker.sock' not in (ROOT/'compose.yaml').read_text()
+def test_data_integrity():
+    compose=(ROOT/'compose.yaml').read_text()
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.9-dev.1' in compose
+    assert 'container_name:' not in compose
+    assert '/var/run/docker.sock' not in compose

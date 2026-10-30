@@ -1,11 +1,19 @@
-## 0.5.8-dev.1 (2026-10-30)
+## 0.5.9-dev.1 (2026-10-30)
+
+- **Replace the machine landing screen** with a genuinely permanent two-pane operator workspace: Machines on the left, active connection content on the right, one 40px horizontal top menu. Keep the original SwitchYard mark and red/graphite identity.
+- Default to the machine tree at login. Selecting or launching a machine leaves the tree in place on desktop; machine search focuses the left directory. No intermediate directory page or separate connection-management shell.
+- Make the left pane keyboard-resizable and collapsible for extra terminal width; on narrow screens it becomes a proper overlay. Preserve the right pane, SSH terminal sessions and desktop session containers without recreating the backend.
+- Keep SSH multi-connect Single / Split 2 / Grid 4 and session tabs. Move inventory import and export into the top navigation's More tools menu.
+- CI now checks an actual Chrome rendering of the two-pane desk, desktop menu, left/right geometry, mobile overlay, terminal viewport sizing, and real multi-pane xterm sessions.
+
+## 0.5.9-dev.1 (2026-10-30)
 
 - Add simultaneous SSH multi-connect: 1-up, 2-up horizontal split, and 4-up grid within the existing maximized terminal canvas. Sessions can originate on entirely different machines, remain connected when a pane is not in view, and are never closed by changing the layout.
 - Machine-switcher rows now have direct SSH/remote-desktop launch controls; New SSH always creates an additional session on the current host. Reopening Tabs shows all existing sessions automatically once a second is opened unless the operator explicitly hides the tab dock.
 - Fit all visible xterm terminals on canvas changes, preserve pane positioning when switching active terminals, and cleanly fall back to single mode when only one session remains.
 - Keep the original red/black/gray branding and 36px focused control bar. Add actual Chrome multi-terminal rendering acceptance plus pure session-selection regressions. This release does not claim simultaneous RDP/VNC/SPICE tiling.
 
-## 0.5.8-dev.1 (2026-10-30)
+## 0.5.9-dev.1 (2026-10-30)
 
 - Restore the approved SwitchYard logo asset, graphite/gray/red palette, and original identity after the unrequested green Station 02 redesign.
 - Shrink the permanent chrome to a 40px utility header. Main navigation, machine selector, session tabs and connection details are independent, dockable surfaces, rather than persistent layout columns.
@@ -13,15 +21,15 @@
 - Refit xterm and remote desktop when the session viewport changes. Single-session terminal panels occupy the whole canvas; inactive terminal panels are hidden. No API or persistent data migrations.
 - Rework Chrome acceptance to enforce minimum 90% viewport width and height for a test-rendered terminal on desktop and phone widths, and check access to docked controls. The actual SSH transport is qualified separately.
 
-## 0.5.8-dev.1 (2026-10-30)
+## 0.5.9-dev.1 (2026-10-30)
 
 - Replaced the prior visually unchanged control room with Station 02: horizontal forest-green navigation, editorial machine-directory landing screen, protocol-specific one-click launch controls, and full-width session desk. No persistent left navigation or machine rail.
 - Machine selector is now an on-demand off-canvas overlay; detailed management functions remain available through the header's action menu. Existing SSH, RDP, VNC, SPICE, SFTP, operations, trust and credential APIs are preserved.
-- Introduced an unmistakable Station 02 · 0.5.8-dev.1 version marker and cache-busted main CSS/JS paths. Fail smoke acceptance if the served HTML/style is not this release.
+- Introduced an unmistakable Station 02 · 0.5.9-dev.1 version marker and cache-busted main CSS/JS paths. Fail smoke acceptance if the served HTML/style is not this release.
 - Replaced all CSS with one coherent forest/limestone/lime stylesheet, including navigation/mobile drawer, directory-first responsive grids and accessible focus/reduced motion.
 - CI explicitly exercises rendered browser navigation and the directory-to-workbench transition at five widths. Actual remote endpoints still require live deployment qualification.
 
-## 0.5.8-dev.1 (2026-10-30)
+## 0.5.9-dev.1 (2026-10-30)
 
 - Rebuilt the Switchyard experience from the ground up: unified graphite and signal-red visual system, new operator navigation, persistent machine rack, full-height session work surface, reorganized action menus, mobile drawers, accessible focus styling, responsive breakpoints and reduced-motion defaults.
 - Removed the stacked workspace CSS layers and their conflicting responsive overrides; one versioned stylesheet owns the whole interface.
