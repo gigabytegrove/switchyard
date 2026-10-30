@@ -157,7 +157,7 @@ function initMachineWorkspace() {
     treeSearchDebounce = setTimeout(renderMachineSwitcher, 110);
   });
   initMachineRail();
-  $('#machinePrimaryConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id).catch(showError);});
+  $('#machinePrimaryConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id,{newSession:true}).catch(showError);});
   $('#machineTrust').addEventListener('click', () => {const a=machineAsset();if(!a)return;$('#scanHost').value=a.host;$('#scanPort').value=a.port||22;navigate('trust');$('#scanHost').focus();});
   $('#machineTerminalConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id,{newSession:$('#machineTerminalConnect').textContent.startsWith('New session')}).catch(showError);});
   $('#workbenchSessions').addEventListener('auxclick',event=>{
@@ -915,6 +915,7 @@ async function connect(aid, {newSession = false} = {}) {
         tab.ws.send(JSON.stringify({type:'resize',cols:size.cols,rows:size.rows}));
     });
     state.tabs.set(id,tab);
+    if(state.tabs.size===2&&!state.sessionDockDismissed)state.sessionDockOpen=true;
   } else {
     tab.asset = asset;
     tab.terminal.writeln('\r\n\x1b[90m[Reconnecting this terminal]\x1b[0m');
@@ -1050,8 +1051,17 @@ function terminalLayoutSelection() {
   const ids=[...state.tabs.keys()];
   const newest=ids.slice().reverse();
   const primary=state.currentTab&&state.tabs.has(state.currentTab)?state.currentTab:newest[0];
-  const result=[primary,...newest.filter(id=>id!==primary)];
-  return result.slice(0,Math.min(count,ids.length));
+  let result=(state.layoutSessionIds||[]).filter(id=>state.tabs.has(id));
+  if(!result.includes(primary)) {
+    if(result.length>=count)result[result.length-1]=primary;
+    else result.push(primary);
+  }
+  for(const id of newest) {
+    if(result.length>=count)break;
+    if(!result.includes(id))result.push(id);
+  }
+  state.layoutSessionIds=result.slice(0,count);
+  return state.layoutSessionIds;
 }
 function applyTerminalLayout() {
   const panels=$('#terminalPanels');if(!panels)return;
@@ -1067,7 +1077,19 @@ function applyTerminalLayout() {
 }
 
 function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); updateMachineHeader(); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
-function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = [...state.tabs.keys()].find(k => normalizedHost(state.tabs.get(k).asset.host) === state.machineHost) || null; renderTabs(); updateTerminalStatus(); if (state.currentTab) selectTab(state.currentTab); else if (state.machineTab==='terminals') machineTab('overview'); }
+function closeTab(id) {
+  const t=state.tabs.get(id);if(!t)return;
+  t.ws?.close();t.terminal.dispose();state.tabs.delete(id);
+  $('#term-'+id)?.remove();
+  state.layoutSessionIds=(state.layoutSessionIds||[]).filter(key=>key!==id);
+  if(state.tabs.size<2){state.terminalLayout=1;state.layoutSessionIds=[];}
+  if(state.currentTab===id){
+    state.currentTab=[...state.tabs.keys()].find(key=>normalizedHost(state.tabs.get(key).asset.host)===state.machineHost)||state.tabs.keys().next().value||null;
+  }
+  renderTabs();updateTerminalStatus();
+  if(state.currentTab)selectTab(state.currentTab);
+  else if(state.machineTab==='terminals')machineTab('overview');
+}
 
 async function exportSSHInventory() {
   await savePrivateDownload('/assets/export', 'switchyard-ssh-inventory.json');
@@ -2164,6 +2186,8 @@ function bind() {
   state.focusPreferred=readUiPreference(SESSION_FOCUS_PREF,true)!==false;
   state.sessionDockOpen=false;
   state.terminalLayout=1;
+  state.layoutSessionIds=[];
+  state.sessionDockDismissed=false;
   initMachineWorkspace();
   bindDesktopUI();
   $('#clock').textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -2224,6 +2248,7 @@ function bind() {
   });
   $('#workbenchSessionsToggle').addEventListener('click', () => {
     state.sessionDockOpen = !state.sessionDockOpen;
+    state.sessionDockDismissed = !state.sessionDockOpen;
     syncWorkspaceChrome();
   });
   window.addEventListener('keydown', event => {
