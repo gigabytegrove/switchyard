@@ -750,3 +750,55 @@ def test_ssh_tcp_probe_uses_no_credentials_and_bounds_batch(client, monkeypatch)
     assert client.post('/api/assets/probes', json={'ids': ['invalid-id']}).status_code == 422
     assert client.post('/api/assets/probes', json={'ids': [str(uuid.uuid4())]}).status_code == 404
     assert client.post('/api/assets/probes', json={'ids': machine_ids * 11}).status_code == 422
+
+
+def test_systemd_services_inventory_controls_and_logs(client, monkeypatch):
+    authenticate(client)
+    client.headers.update({'Origin': 'http://testserver'})
+    created = client.post('/api/assets', json=asset())
+    assert created.status_code == 201, created.text
+    aid = created.json()['id']
+    commands = []
+
+    def fake_command(target, command, password=None, limit_seconds=30):
+        commands.append(command)
+        if 'list-units' in command:
+            return {'exit_code': 0, 'stdout':
+                    'sshd.service loaded active running OpenSSH server daemon\n'
+                    '● sample.service loaded failed failed Example service\n', 'stderr': ''}
+        if 'journalctl' in command:
+            return {'exit_code': 0, 'stdout': 'journal line\n', 'stderr': ''}
+        return {'exit_code': 0, 'stdout': '', 'stderr': ''}
+
+    monkeypatch.setattr(m, 'execute_runbook_ssh', fake_command)
+    listed = client.get('/api/assets/' + aid + '/services')
+    assert listed.status_code == 200, listed.text
+    assert listed.json()['count'] == 2
+    assert listed.json()['services'][1]['active'] == 'failed'
+    assert listed.json()['services'][0]['unit'] == 'sshd.service'
+    action = {'unit': 'sshd.service', 'action': 'restart', 'confirmed': True}
+    assert client.post('/api/assets/' + aid + '/services/action',
+                       json={**action, 'confirmed': False}).status_code == 422
+    assert client.post('/api/assets/' + aid + '/services/action',
+                       json={**action, 'unit': 'evil;rm.service'}).status_code == 422
+    assert client.post('/api/assets/' + aid + '/services/action',
+                       json=action).status_code == 200
+    assert commands[-1] == 'systemctl restart sshd.service'
+    logs = client.get('/api/assets/' + aid + '/services/sshd.service/logs')
+    assert logs.status_code == 200
+    assert logs.json()['lines'] == 'journal line\n'
+    assert client.get('/api/assets/' + aid + '/services/evil;rm.service/logs').status_code == 422
+
+
+def test_systemd_service_failure_is_audited(client, monkeypatch):
+    authenticate(client)
+    client.headers.update({'Origin': 'http://testserver'})
+    aid = client.post('/api/assets', json=asset()).json()['id']
+    monkeypatch.setattr(m, 'execute_runbook_ssh', lambda *_args, **_kw: {
+        'exit_code': 1, 'stdout': '', 'stderr': 'permission denied'})
+    result = client.post('/api/assets/' + aid + '/services/action',
+                         json={'unit': 'sshd.service', 'action': 'stop', 'confirmed': True})
+    assert result.status_code == 502
+    assert 'permission denied' in result.json()['detail']
+    assert any(x['action'] == 'service.stop' and x['outcome'] == 'failed'
+               for x in client.get('/api/audit').json())
