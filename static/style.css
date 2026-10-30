@@ -782,3 +782,10 @@ dialog.editor-dialog .command-input{min-height:240px;height:48dvh}
   #shell .machine-masthead-actions>button{padding:3px 5px;font-size:10px}
   #shell .workbench-command-bar{padding-inline:5px}
 }
+
+
+/* Left rail owns its collapse control; only show toolbar restore when hidden. */
+@media(min-width:761px){
+  #shell .machine-layout.tree-open #machineTreeToggle{display:none!important}
+  #shell .machine-layout:not(.tree-open) #machineTreeToggle{display:inline-flex!important}
+}
