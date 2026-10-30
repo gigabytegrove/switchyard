@@ -466,14 +466,22 @@ function renderMachineSwitcher() {
   for(const m of matches)(groups.get(m.folder_id)||groups.get('')).push(m);
   const renderMachine=(m,level)=>{
     const title=m.ssh[0]?.label||m.desktops[0]?.label||m.host;
+    const row=node('div','tree-machine-row');
+    row.style.setProperty('--tree-level',String(level));
     const item=button('','tree-machine'+(m.host===state.machineHost?' active':''),()=>openMachine(m.host));
-    item.style.setProperty('--tree-level',String(level));
     item.setAttribute('aria-label',`Select ${title}, ${m.host}`);item.title=`${title} · ${m.host}`;
     if(m.host===state.machineHost)item.setAttribute('aria-current','page');
-    item.addEventListener('dblclick',()=>{if(m.ssh.length)connect(m.ssh[0].id).catch(showError);else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);});
+    const launch=()=>{
+      openMachine(m.host);
+      if(m.ssh.length)connect(m.ssh[0].id).catch(showError);
+      else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);
+    };
+    item.addEventListener('dblclick',launch);
     const copy=node('span','tree-machine-copy');copy.append(node('strong','',title),node('small','mono',m.host));
-    item.append(node('span','tree-machine-icon',m.ssh.length?'▣':'▤'),copy,node('span','tree-protocols',m.ssh.length?'SSH':m.desktops[0]?.protocol?.toUpperCase()||''));
-    target.append(item);
+    item.append(node('span','tree-machine-icon',m.ssh.length?'▣':'▤'),copy);
+    const quick=button(m.ssh.length?'SSH ↗':m.desktops.length?'Open ↗':'Select','tree-machine-quick',launch);
+    quick.setAttribute('aria-label','Connect to '+title);
+    row.append(item,quick);target.append(row);
   };
   const count=(id,seen=new Set())=>{
     if(seen.has(id))return 0;seen.add(id);
@@ -608,15 +616,16 @@ function renderMachineOverview(){
 
 const SESSION_FOCUS_PREF = 'switchyard:session:focus:v1';
 function fitVisibleSession() {
-  if (state.page !== 'machine') return;
-  if (state.machineTab === 'terminals') {
-    const tab=state.tabs.get(state.currentTab);
-    if (tab?.fit && tab.terminal?.element && !$('#machinePanel-terminals').classList.contains('hidden')) {
-      try { tab.fit.fit(); } catch (error) { console.warn('Terminal fit deferred', error); }
+  if(state.page!=='machine')return;
+  if(state.machineTab==='terminals') {
+    if($('#machinePanel-terminals').classList.contains('hidden'))return;
+    for(const id of terminalLayoutSelection()) {
+      const tab=state.tabs.get(id);
+      if(tab?.fit && tab.terminal?.element) {
+        try{tab.fit.fit();}catch(error){console.warn('Terminal fit deferred',error);}
+      }
     }
-  } else if (state.machineTab === 'desktops') {
-    fitDesktop(desktopCurrent());
-  }
+  } else if(state.machineTab==='desktops')fitDesktop(desktopCurrent());
 }
 function syncWorkspaceChrome() {
   const workspace = state.page === 'machine';
@@ -995,23 +1004,68 @@ async function connect(aid, {newSession = false} = {}) {
   return tab.id;
 }
 function renderTabs() {
-  const nav = $('#terminalTabs'); nav.replaceChildren();
-  const panels = $('#terminalPanels');
-  const visible = [...state.tabs.values()].filter(t => normalizedHost(t.asset.host) === state.machineHost);
-  if (!visible.length) panels.querySelector(':scope > .empty-state') || panels.append(node('div', 'empty-state', 'No SSH session open. Select Connect to start.'));
-  else panels.querySelector(':scope > .empty-state')?.remove();
-  for (const [id, t] of state.tabs) {
-    if (normalizedHost(t.asset.host) !== state.machineHost) continue;
-    const wrap = node('div', 'terminal-tab' + (id === state.currentTab ? ' active' : ''));
-    const select = button(t.asset.label + (t.ws?.readyState === WebSocket.CLOSED ? ' · closed' : ''), 'tab-select', () => selectTab(id));
-    select.setAttribute('role', 'tab'); select.setAttribute('aria-selected', String(id === state.currentTab));
-    const close = button('×', 'tab-close', () => closeTab(id)); close.setAttribute('aria-label', 'Close ' + t.asset.label);
-    wrap.append(select, close); nav.append(wrap);
-    if (!$('#term-' + id)) { const panel = node('div', 'terminal-host'); panel.id = 'term-' + id; panels.append(panel); }
+  const nav=$('#terminalTabs');nav.replaceChildren();
+  const panels=$('#terminalPanels');
+  const visible=[...state.tabs.values()].filter(t=>normalizedHost(t.asset.host)===state.machineHost);
+  if(!state.tabs.size) {
+    if(!panels.querySelector(':scope > .empty-state'))panels.append(node('div','empty-state','No SSH session open. Select New SSH or Machines to connect.'));
+  } else panels.querySelector(':scope > .empty-state')?.remove();
+  for(const [id,t] of state.tabs) {
+    // All live SSH panels remain mounted, including sessions on other hosts.
+    if(normalizedHost(t.asset.host)===state.machineHost) {
+      const wrap=node('div','terminal-tab'+(id===state.currentTab?' active':''));
+      const select=button(t.asset.label+(t.ws?.readyState===WebSocket.CLOSED?' · closed':''),'tab-select',()=>selectTab(id));
+      select.setAttribute('role','tab');select.setAttribute('aria-selected',String(id===state.currentTab));
+      const close=button('×','tab-close',()=>closeTab(id));close.setAttribute('aria-label','Close '+t.asset.label);
+      wrap.append(select,close);nav.append(wrap);
+    }
+    if(!$('#term-'+id)) {
+      const panel=node('div','terminal-host');panel.id='term-'+id;
+      panel.dataset.sessionLabel=t.asset.label+' · '+t.asset.host;
+      panel.dataset.sessionId=id;
+      panel.addEventListener('pointerdown',()=>{
+        if(state.currentTab!==id && state.terminalLayout>1) {
+          state.currentTab=id;
+          state.machineHost=normalizedHost(t.asset.host);
+          updateMachineHeader();
+          renderTabs();
+        }
+      });
+      panels.append(panel);
+    }
   }
-  $$('.terminal-host', panels).forEach(el => el.classList.toggle('active', el.id === 'term-' + state.currentTab && normalizedHost(state.tabs.get(state.currentTab)?.asset.host) === state.machineHost));
-  $('#terminalCount').textContent = state.tabs.size; updateTerminalStatus(); renderWorkbenchSessions();
+  $$('.terminal-host',panels).forEach(el=>{
+    const tab=state.tabs.get(el.dataset.sessionId);
+    el.classList.toggle('active',!!tab&&el.dataset.sessionId===state.currentTab);
+    if(tab)el.dataset.sessionLabel=tab.asset.label+' · '+tab.asset.host;
+  });
+  applyTerminalLayout();
+  $('#terminalCount').textContent=state.tabs.size;
+  updateTerminalStatus();
+  renderWorkbenchSessions();
 }
+function terminalLayoutSelection() {
+  const count=state.terminalLayout===4?4:state.terminalLayout===2?2:1;
+  if(count===1 || state.tabs.size<2)return state.currentTab&&state.tabs.has(state.currentTab)?[state.currentTab]:[];
+  const ids=[...state.tabs.keys()];
+  const newest=ids.slice().reverse();
+  const primary=state.currentTab&&state.tabs.has(state.currentTab)?state.currentTab:newest[0];
+  const result=[primary,...newest.filter(id=>id!==primary)];
+  return result.slice(0,Math.min(count,ids.length));
+}
+function applyTerminalLayout() {
+  const panels=$('#terminalPanels');if(!panels)return;
+  const selected=terminalLayoutSelection();
+  const grid=state.terminalLayout>1&&selected.length>1;
+  panels.classList.toggle('multiconnect',grid);
+  panels.dataset.columns=grid?'2':'1';
+  panels.dataset.rows=grid&&state.terminalLayout===4?'2':'1';
+  const selectedIds=new Set(selected);
+  $$('.terminal-host',panels).forEach(host=>host.classList.toggle('multi-visible',grid&&selectedIds.has(host.dataset.sessionId)));
+  const mode=$('#terminalLayoutMode');if(mode)mode.value=String(state.terminalLayout||1);
+  if(grid)requestAnimationFrame(()=>requestAnimationFrame(fitVisibleSession));
+}
+
 function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); updateMachineHeader(); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
 function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = [...state.tabs.keys()].find(k => normalizedHost(state.tabs.get(k).asset.host) === state.machineHost) || null; renderTabs(); updateTerminalStatus(); if (state.currentTab) selectTab(state.currentTab); else if (state.machineTab==='terminals') machineTab('overview'); }
 
@@ -2109,6 +2163,7 @@ function safeAsync(fn) { return event => { Promise.resolve(fn(event)).catch(show
 function bind() {
   state.focusPreferred=readUiPreference(SESSION_FOCUS_PREF,true)!==false;
   state.sessionDockOpen=false;
+  state.terminalLayout=1;
   initMachineWorkspace();
   bindDesktopUI();
   $('#clock').textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -2154,6 +2209,18 @@ function bind() {
     state.focusPreferred = !(state.focusPreferred !== false);
     saveUiPreference(SESSION_FOCUS_PREF,state.focusPreferred);
     syncWorkspaceChrome();
+  });
+  $('#terminalLayoutMode').addEventListener('change', event=>{
+    const count=Number(event.target.value);
+    if(![1,2,4].includes(count)){event.target.value='1';return;}
+    if(count>1&&state.tabs.size<2){
+      state.terminalLayout=1;event.target.value='1';
+      toast('Open another SSH connection from Machines, then select Split 2 or Grid 4.');
+      focusMachineSearch();return;
+    }
+    state.terminalLayout=count;
+    if(count>1&&state.machineTab!=='terminals')machineTab('terminals');
+    renderTabs();syncWorkspaceChrome();
   });
   $('#workbenchSessionsToggle').addEventListener('click', () => {
     state.sessionDockOpen = !state.sessionDockOpen;
