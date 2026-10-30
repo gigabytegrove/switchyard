@@ -366,3 +366,7 @@ button:disabled {cursor:not-allowed;opacity:.5}
  .workbench-connect-action{white-space:nowrap}
 }
 @media(prefers-reduced-motion:reduce){.machine-context,.workbench-connect-action{transition:none!important}}
+
+#machineTrust{white-space:nowrap}
+@media(max-width:1000px){.machine-masthead-actions #machineTrust{font-size:11px;padding-inline:7px}}
+@media(max-width:520px){.machine-masthead-actions #machineTrust{display:none}}

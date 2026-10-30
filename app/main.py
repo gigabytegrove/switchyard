@@ -20,6 +20,7 @@ import os
 import re
 import secrets
 import shlex
+import socket
 import posixpath
 import stat
 import sqlite3
@@ -60,7 +61,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title='Switchyard', version='0.5.3-dev.1', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title='Switchyard', version='0.5.3-dev.2', docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 def connection():
@@ -465,7 +466,7 @@ def setup_complete(body: InitialSetup, request: Request):
 
 @app.get('/healthz')
 def health():
-    return {'status': 'ok', 'version': '0.5.3-dev.1'}
+    return {'status': 'ok', 'version': '0.5.3-dev.2'}
 
 
 @app.get('/api/login/options')
@@ -941,7 +942,7 @@ def backup(_=Depends(require_auth)):
         if credentials_key and (len(credentials_key) != 44 or credkey.stat().st_mode & 0o077):
             raise HTTPException(503, 'Saved credentials key format or file permissions are unsafe')
         manifest = {
-            'application': 'Switchyard', 'format': 2, 'version': '0.5.3-dev.1',
+            'application': 'Switchyard', 'format': 2, 'version': '0.5.3-dev.2',
             'created_utc': datetime.now(timezone.utc).isoformat(),
             'files': {'switchyard.sqlite3': hashlib.sha256(content).hexdigest(),
                       'known_hosts': hashlib.sha256(hosts).hexdigest(),
@@ -1007,13 +1008,13 @@ def configure_update(body: UpdateConfig, request: Request, _=Depends(require_aut
 @app.get('/api/update/status')
 def update_status(_=Depends(require_auth)):
     configured = bool(saved_setting('update_asset_id') and saved_setting('update_project') and saved_setting('update_directory'))
-    installed = '0.5.3-dev.1'
+    installed = '0.5.3-dev.2'
     latest = None
     check_error = None
     try:
         from urllib.request import Request as UrlRequest, urlopen
         req = UrlRequest('https://raw.githubusercontent.com/gigabytegrove/switchyard/main/VERSION',
-                         headers={'User-Agent':'Switchyard/0.5.3-dev.1'})
+                         headers={'User-Agent':'Switchyard/0.5.3-dev.2'})
         with urlopen(req, timeout=3) as remote:
             contents = remote.read(80).decode('ascii').strip()
         if re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.]+)?', contents):
@@ -1257,9 +1258,33 @@ def ssh_client(asset: dict, interactive_password: str | None = None):
         client.connect(hostname=asset['host'], port=asset['port'], username=asset['username'],
                        password=password, key_filename=key, allow_agent=False,
                        look_for_keys=False, timeout=12, auth_timeout=12, banner_timeout=12)
-    except Exception:
+    except paramiko.BadHostKeyException as error:
         client.close()
-        raise HTTPException(502, 'SSH connection failed. Verify host trust, credentials and network access.')
+        raise HTTPException(409, 'SSH host key changed. Review the machine in Host trust before reconnecting.') from error
+    except paramiko.AuthenticationException as error:
+        client.close()
+        raise HTTPException(502, 'SSH authentication rejected. Check the saved password, key, or Vaultwarden item.') from error
+    except paramiko.SSHException as error:
+        client.close()
+        message = str(error).lower()
+        if 'not found in known_hosts' in message or 'not found in known hosts' in message or 'unknown server' in message:
+            raise HTTPException(409, 'SSH host is not trusted. Discover and verify its fingerprint in Host trust first.') from error
+        raise HTTPException(502, 'SSH protocol negotiation failed. Check the SSH service and supported algorithms.') from error
+    except (TimeoutError, socket.timeout) as error:
+        client.close()
+        raise HTTPException(504, 'SSH connection timed out. Check the host address, port, and firewall.') from error
+    except ConnectionRefusedError as error:
+        client.close()
+        raise HTTPException(502, 'SSH connection refused. Check the SSH service and port.') from error
+    except socket.gaierror as error:
+        client.close()
+        raise HTTPException(502, 'SSH hostname could not be resolved. Check the machine address and DNS.') from error
+    except OSError as error:
+        client.close()
+        raise HTTPException(502, 'SSH network connection failed. Check routing, firewall, and host availability.') from error
+    except Exception as error:
+        client.close()
+        raise HTTPException(502, 'SSH connection failed unexpectedly. Inspect the server logs.') from error
     finally:
         password = None
     return client
@@ -1568,6 +1593,12 @@ async def terminal(ws: WebSocket, aid: str):
         for task in done:
             if not task.cancelled():
                 task.result()
+    except HTTPException as error:
+        try:
+            await ws.send_json({'type': 'error', 'message': str(error.detail)})
+        except Exception:
+            pass
+        audit('terminal.error', aid, 'failed')
     except WebSocketDisconnect:
         pass
     except Exception:

@@ -132,7 +132,8 @@ function initMachineWorkspace() {
   $('#machineSwitchSearch').addEventListener('input', renderMachineSwitcher);
   initMachineRail();
   $('#machinePrimaryConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id).catch(showError);});
-  $('#machineTerminalConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id).catch(showError);});
+  $('#machineTrust').addEventListener('click', () => {const a=machineAsset();if(!a)return;$('#scanHost').value=a.host;$('#scanPort').value=a.port||22;navigate('trust');$('#scanHost').focus();});
+  $('#machineTerminalConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id,{newSession:$('#machineTerminalConnect').textContent.startsWith('New session')}).catch(showError);});
   $('#workbenchSessions').addEventListener('auxclick',event=>{
     if(event.button!==1)return;
     const element=event.target.closest('.workbench-session-tab');
@@ -509,6 +510,7 @@ function updateMachineHeader(){
   $('#machinePrimaryConnect').disabled=!a;$('#machinePrimaryConnect').classList.toggle('hidden',!a);
   $('#machineEdit').disabled=!a;$('#machineAddDesktop').disabled=!state.machineHost;
   $('#machineInfoToggle').disabled=!state.machineHost;
+  $('#machineTrust').disabled=!a;
   renderMachineSwitcher();
   if(!$('#machineInfoDrawer').classList.contains('hidden'))renderMachineInfo();
 }
@@ -700,34 +702,87 @@ async function removeAsset(asset) {
   await api('/assets/' + asset.id, { method: 'DELETE' }); await refreshAssets(); renderMachineDirectory(); toast('Connection removed.');
 }
 async function promptPassword(asset) { return promptCredential(asset); }
-async function connect(aid) {
-  const asset = state.assets.find(a => a.id === aid);
-  if (!asset) { toast('Asset was not found.', true); return; }
-  const password = await promptPassword(asset);
-  if (password === null) return;
+async function connect(aid, {newSession = false} = {}) {
+  const asset = state.assets.find(a => String(a.id) === String(aid));
+  if (!asset) { toast('Machine connection was not found.', true); return; }
   if (!window.Terminal || !window.FitAddon) { toast('Terminal assets are missing from the container.', true); return; }
-  const id = clientSessionId();
-  const tab = { id, asset, ws: null, password, terminal: new window.Terminal({ cursorBlink: true, fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: 14, lineHeight: 1.25, scrollback: 5000, theme: { background: '#202027', foreground: '#F5F6F9', cursor: '#E24E62', selectionBackground: '#58586A' } }), fit: new window.FitAddon.FitAddon() };
-  tab.terminal.loadAddon(tab.fit);
-  state.tabs.set(id, tab); state.currentTab = id;
-  navigate('terminals'); renderTabs(); updateTerminalStatus();
-  const panel = $('#term-' + id); tab.terminal.open(panel); tab.fit.fit();
-  const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/terminal/' + encodeURIComponent(aid);
-  const ws = new WebSocket(wsUrl); tab.ws = ws;
-  tab.terminal.write('\x1b[38;5;113mSwitchyard · connecting to ' + asset.host + '\x1b[0m\r\n');
-  ws.onopen = () => {
-    updateTerminalStatus();
-    ws.send(JSON.stringify({ type: 'auth', password: tab.password })); tab.password = null;
-    ws.send(JSON.stringify({ type: 'resize', cols: tab.terminal.cols, rows: tab.terminal.rows }));
+  const matches = [...state.tabs.values()].filter(t => String(t.asset.id) === String(aid));
+  const active = matches.find(t => t.ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(t.ws.readyState));
+  if (active && !newSession) { selectTab(active.id); return active.id; }
+  const previous = newSession ? null : matches.find(t => !t.ws || t.ws.readyState === WebSocket.CLOSED);
+  let password = await promptPassword(asset);
+  if (password === null) return null;
+  let tab = previous;
+  if (!tab) {
+    const id = clientSessionId();
+    tab = {id, asset, ws: null,
+      terminal: new window.Terminal({cursorBlink: true, fontFamily:'Cascadia Code, Consolas, monospace',
+        fontSize:14,lineHeight:1.25,scrollback:5000,
+        theme:{background:'#202027',foreground:'#F5F6F9',cursor:'#E24E62',selectionBackground:'#58586A'}}),
+      fit:new window.FitAddon.FitAddon()};
+    tab.terminal.loadAddon(tab.fit);
+    // Bind listeners once to this tab. Reconnect must not multiply handlers.
+    tab.terminal.onData(data => {
+      if(tab.ws?.readyState === WebSocket.OPEN) tab.ws.send(JSON.stringify({type:'input',data}));
+    });
+    tab.terminal.onResize(size => {
+      if(tab.ws?.readyState === WebSocket.OPEN)
+        tab.ws.send(JSON.stringify({type:'resize',cols:size.cols,rows:size.rows}));
+    });
+    state.tabs.set(id,tab);
+  } else {
+    tab.asset = asset;
+    tab.terminal.writeln('\r\n\x1b[90m[Reconnecting this terminal]\x1b[0m');
+  }
+  state.currentTab = tab.id;
+  navigate('terminals');renderTabs();updateTerminalStatus();
+  const panel = $('#term-'+tab.id);
+  if(!previous) tab.terminal.open(panel);
+  tab.fit.fit();
+  const wsUrl=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/terminal/'+encodeURIComponent(aid);
+  let ws;
+  try{ws=new WebSocket(wsUrl);}
+  catch(error){
+    password=null;
+    tab.terminal.writeln('\r\n\x1b[31mCould not start the browser connection.\x1b[0m');
+    toast('Connection transport could not start for '+asset.host+'.',true);
+    renderTabs();updateTerminalStatus();return tab.id;
+  }
+  tab.ws=ws;
+  tab.terminal.writeln('\r\nSwitchyard · connecting to '+asset.host);
+  renderTabs();updateTerminalStatus();
+  ws.onopen=()=>{
+    if(tab.ws!==ws)return;
+    ws.send(JSON.stringify({type:'auth',password}));
+    password=null;
+    ws.send(JSON.stringify({type:'resize',cols:tab.terminal.cols,rows:tab.terminal.rows}));
+    renderTabs();updateTerminalStatus();
   };
-  ws.onmessage = event => {
-    try { const message = JSON.parse(event.data); if (message.type === 'data') tab.terminal.write(message.data); else if (message.type === 'error') { tab.terminal.writeln('\r\n\x1b[31m' + message.message + '\x1b[0m'); toast(message.message, true); } }
-    catch { tab.terminal.writeln('\r\nUnexpected terminal message.'); }
+  ws.onmessage=event=>{
+    if(tab.ws!==ws)return;
+    try{
+      const message=JSON.parse(event.data);
+      if(message.type==='data')tab.terminal.write(message.data);
+      else if(message.type==='error'){
+        const detail=typeof message.message==='string'?message.message:'SSH connection failed';
+        tab.terminal.writeln('\r\n\x1b[31m'+detail+'\x1b[0m');
+        toast(detail,true);
+      }
+    }catch{tab.terminal.writeln('\r\nUnexpected terminal message.');}
   };
-  ws.onerror = () => {tab.terminal.writeln('\r\n\x1b[31mConnection transport failed. Check host trust, SSH credentials and network reachability.\x1b[0m');toast('Unable to connect to '+asset.host+'. Check SSH credentials and Host trust.',true);updateTerminalStatus();};
-  ws.onclose = () => { tab.password = null; tab.terminal.writeln('\r\n\x1b[90m[Session disconnected — use Reconnect to open a new session]\x1b[0m'); renderTabs(); updateTerminalStatus(); }; 
-  tab.terminal.onData(data => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data })); });
-  tab.terminal.onResize(size => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows })); });
+  ws.onerror=()=>{
+    if(tab.ws!==ws)return;
+    password=null;
+    tab.terminal.writeln('\r\n\x1b[31mConnection failed. Review the machine and SSH host trust.\x1b[0m');
+    toast('Connection to '+asset.host+' failed. Review credentials and SSH host trust.',true);
+  };
+  ws.onclose=()=>{
+    if(tab.ws!==ws)return;
+    password=null;
+    tab.terminal.writeln('\r\n\x1b[90m[Disconnected — Reconnect will reuse this tab]\x1b[0m');
+    renderTabs();updateTerminalStatus();
+  };
+  return tab.id;
 }
 function renderTabs() {
   const nav = $('#terminalTabs'); nav.replaceChildren();
@@ -1353,6 +1408,7 @@ function desktopActionsEnabled(enabled, session) {
   $('#desktopRemoteClipboard').disabled = !enabled || !session?.clipboardText;
   $('#desktopFullscreen').disabled = !enabled;
   $('#desktopDisconnect').disabled = !enabled;
+  $('#desktopReconnect').disabled = !enabled;
 }
 function renderDesktopTabs() {
   const nav = $('#desktopSessionTabs'); const host = $('#desktopViewports'); nav.replaceChildren();
@@ -1402,7 +1458,11 @@ function fitDesktop(session) {
   const maxWidth = session.surface.clientWidth - 16, maxHeight = session.surface.clientHeight - 16;
   screen.scale(Math.max(0.15, Math.min(maxWidth / width, maxHeight / height, 1.5)));
 }
-async function openDesktop(record) {
+async function openDesktop(record, {retry = false, newSession = false} = {}) {
+  const existing=[...desktopTabs.values()].find(session =>
+    String(session.record.id)===String(record.id) && session.record.protocol===record.protocol);
+  const disconnected=existing && (existing.status==='Disconnected' || existing.status.startsWith('Connection error') || existing.status==='SPICE connection failed');
+  if(existing && !retry && !newSession && !disconnected){selectDesktopTab(existing.id);return existing.id;}
   if (record.protocol !== 'spice' && (!window.Guacamole?.Client || !window.Guacamole?.WebSocketTunnel)) {
     throw Error('The Guacamole browser library is not installed. Rebuild the full Switchyard image.');
   }
@@ -1411,15 +1471,15 @@ async function openDesktop(record) {
     password = record.has_saved_password ? undefined : await askDialog({title:'Desktop credentials',description:`Password for ${record.protocol.toUpperCase()} on ${record.host}.`,label:'Password',secret:true,action:'Connect'});
     if (password === null) return;
   }
-  if (desktopTabs.size >= 8) throw Error('At most 8 remote desktops can remain connected.');
+  if (desktopTabs.size >= 8 && !(existing && !newSession)) throw Error('At most 8 remote desktops can remain connected.');
   const size = {
     width: record.width, height: record.height, dpi: record.dpi,
   };
   const response = await api(`/desktops/${record.id}/ticket`, { method: 'POST', body: { ...size, ...(password !== undefined ? {password} : {}) } });
   password = null;
+  if(existing && !newSession)closeDesktopTab(existing.id); // Only after the replacement ticket succeeds.
   if (record.protocol === 'spice') {
-    openSpiceDesktop(record, response);
-    return;
+    return openSpiceDesktop(record, response);
   }
   const id = clientSessionId();
   const surface = node('div', 'desktop-surface'); surface.id = 'desktop-' + id;
@@ -1501,6 +1561,7 @@ function openSpiceDesktop(record, response) {
   // The upstream module announces readiness only after it is initialized.
   session.spiceCredentials = {token: response.ticket, password: response.spice_password || ''};
   selectDesktopTab(id);
+  return id;
 }
 window.addEventListener('message', event => {
   if (event.origin !== location.origin || !event.data || typeof event.data !== 'object') return;
@@ -1614,6 +1675,7 @@ function bindDesktopUI() {
   $('#desktopCAD').addEventListener('click', desktopCAD);
   $('#desktopClipboard').addEventListener('click', desktopSendClipboard);
   $('#desktopRemoteClipboard').addEventListener('click', safeAsync(desktopCopyRemoteClipboard));
+  $('#desktopReconnect').addEventListener('click', () => {const session=desktopCurrent();if(session)openDesktop(session.record,{retry:true}).catch(showError);});
   $('#desktopDisconnect').addEventListener('click', () => { if (currentDesktopTab) closeDesktopTab(currentDesktopTab); });
   $('#desktopFullscreen').addEventListener('click', safeAsync(async () => { const session = desktopCurrent(); if (!session) return; if (document.fullscreenElement) await document.exitFullscreen(); else await session.surface.requestFullscreen(); fitDesktop(session); }));
   document.addEventListener('fullscreenchange', () => fitDesktop(desktopCurrent()));

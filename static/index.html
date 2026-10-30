@@ -127,7 +127,7 @@ http://ops.home.arpa:9791"></textarea>
               <div class="machine-masthead-actions">
                 <button type="button" class="action-quiet" id="machineInfoToggle" aria-expanded="false" aria-controls="machineInfoDrawer">Details</button>
                 <button type="button" class="action-quiet" id="machineEdit">Edit</button>
-                <button type="button" class="action-quiet" id="machineAddDesktop">+ Desktop</button>
+                <button type="button" class="action-quiet" id="machineAddDesktop">+ Desktop</button><button type="button" class="action-quiet" id="machineTrust">Host trust</button>
                 <button type="button" class="action-primary" id="machinePrimaryConnect">Connect SSH ↗</button>
               </div>
             </header>
@@ -162,7 +162,7 @@ http://ops.home.arpa:9791"></textarea>
         <div id="desktopList" class="asset-table"><div class="empty-state">No saved desktops.</div></div>
         <div class="desktop-session-heading"><div><h2>Live desktop workspace</h2><p>Each opened tab is a private, temporary session. Closing a tab disconnects it.</p></div><span id="desktopSessionCount" role="status">0 active</span></div>
         <div id="desktopSessionTabs" class="terminal-tabs" role="tablist" aria-label="Remote desktop sessions"></div>
-        <div class="desktop-toolbar"><button id="desktopCAD" type="button" class="action-quiet" disabled>Ctrl+Alt+Del</button><button id="desktopClipboard" type="button" class="action-quiet" disabled>Send text</button><button id="desktopRemoteClipboard" type="button" class="action-quiet" disabled>Copy remote text</button><button id="desktopFullscreen" type="button" class="action-quiet" disabled>Fullscreen</button><button id="desktopDisconnect" type="button" class="action-quiet danger" disabled>Disconnect</button><span id="desktopConnectionState" role="status">No active session</span></div>
+        <div class="desktop-toolbar"><button id="desktopCAD" type="button" class="action-quiet" disabled>Ctrl+Alt+Del</button><button id="desktopClipboard" type="button" class="action-quiet" disabled>Send text</button><button id="desktopRemoteClipboard" type="button" class="action-quiet" disabled>Copy remote text</button><button id="desktopFullscreen" type="button" class="action-quiet" disabled>Fullscreen</button><button id="desktopReconnect" type="button" class="action-quiet" disabled>Reconnect</button><button id="desktopDisconnect" type="button" class="action-quiet danger" disabled>Disconnect</button><span id="desktopConnectionState" role="status">No active session</span></div>
         <div id="desktopViewports" class="desktop-viewports"><div class="empty-state">Choose a saved RDP, VNC or SPICE connection and select Open desktop.</div></div>
         <div class="desktop-session-heading"><div><h2>Server-side active sessions</h2><p>Review connections across browser tabs and disconnect abandoned sessions.</p></div><button id="desktopActiveRefresh" type="button" class="action-quiet">Refresh active sessions</button></div>
         <div id="desktopActiveSessions" class="asset-table"><div class="empty-state">No server-side remote desktops are active.</div></div>

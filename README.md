@@ -7,7 +7,7 @@
 Self-hosted machine profiles with SSH, SFTP, Docker, Linux health, and remote desktops (RDP, VNC, SPICE). Optional encrypted stored passwords and Vaultwarden integration.
 
 [![Source tests and Docker build](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gigabytegrove/switchyard/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.5.3--dev.1-B72237)
+![Version](https://img.shields.io/badge/version-0.5.3--dev.2-B72237)
 ![Docker](https://img.shields.io/badge/deployment-Docker-B72237?logo=docker)
 ![Protocols](https://img.shields.io/badge/desktops-RDP%20%7C%20VNC%20%7C%20SPICE-5934AC)
 ![Status](https://img.shields.io/badge/status-development-orange)
@@ -38,9 +38,11 @@ docker compose ps
 
 **LAN browser compatibility:** Session IDs for SSH, RDP, VNC, and SPICE use `crypto.getRandomValues()`, which works over private-IP HTTP as well as HTTPS. Browser UUID availability is regression tested in Chromium over an simulated LAN browser constraints.
 
-**Machine navigation:** v0.5.3-dev.1 fixes a JavaScript crash when switching machines, Runbooks, or Files. The selector regression is exercised by an executable Node DOM test in CI.
+**Machine navigation:** v0.5.3-dev.2 fixes a JavaScript crash when switching machines, Runbooks, or Files. The selector regression is exercised by an executable Node DOM test in CI.
 
 **Operator workspace:** Resizable connection tree (196–440px) with remembered width; persisted collapsed folders; keyboard shortcuts Ctrl/Cmd+K and / for quick search; sorted folders and machines; narrow-screen slide-in directory with full-width terminal; session tabs indicate disconnected state. These are browser-only layout preferences, not server or credential configuration.
+
+**Connection reliability (v0.5.3-dev.2):** SSH Reconnect now reuses the existing terminal tab and listeners. The explicit New session action is separate. Desktop sessions focus an existing connection, and the Reconnect control obtains a new ticket while replacing a disconnected viewer. SSH failures now report safe, actionable causes; Host trust review is available directly for the selected machine. These changes were tested with mocked SSH and browser transports; live target acceptance is still required.
 
 **Deployment images:** Docker Compose pulls published artifacts from GHCR. The app is built in GitHub Actions; Docker Hub is not required on the deployment host. All application configuration is written from the browser to the existing persistent `switchyard_data` Docker volume at `/data`.
 
@@ -88,7 +90,7 @@ After first-run completion, use **Settings → Browser and network access** to u
 
 **The `/data` Docker named volume is required for persistence.** Never use `docker compose down -v` during upgrades or normal maintenance. A container/image replacement does not reset settings when the volume is preserved.
 
-## Machine workspace (v0.5.3-dev.1)
+## Machine workspace (v0.5.3-dev.2)
 
 The Machines directory is now the primary navigation destination. The host-first workspace presents a persistent machine switcher and one compact machine header, followed by **Overview, Terminal, Remote desktop, Files, Docker and Health** tabs. These tabs reuse existing SSH, SFTP, Docker, remote desktop and agentless health APIs, preserving machine records and credentials in the Docker volume. Available connection rows open SSH or the matching RDP/VNC/SPICE session directly; the Terminal tab provides a new-session / reconnect action and clear connection states. Non-SSH machines keep their desktop access without misleading file, Docker or health controls.
 

@@ -1,3 +1,11 @@
+## 0.5.3-dev.2 — connection reliability and workbench corrections
+
+- Reconnect an SSH session in its original tab using a fresh WebSocket, preserving terminal history and registering input/resize listeners exactly once. New session remains explicit and separate.
+- Selecting an already active RDP/VNC/SPICE connection focuses it. Retry replaces a failed or disconnected desktop after obtaining a fresh ticket rather than stacking another tab.
+- Add a remote desktop Reconnect control, and a machine-scoped Host trust action that pre-fills the currently selected SSH host and port.
+- Return actionable, sanitized SSH failure reasons (host trust, key change, authentication, DNS, connection refused, timeout, protocol negotiation) to the terminal browser.
+- Add executable connection/session regression tests. Preserve existing Compose project, credentials, machine folders, database and remote-access UI design.
+
 ## 0.5.3-dev.1 — operator workspace refinement
 
 - Resize the connection tree from 196 to 440 pixels using mouse/pointer, accessible arrow keys and Home/End; double-click resets.
