@@ -12,7 +12,7 @@ for(const key of ['id="machineLayout"','id="machineRailResize"','id="machineTree
 assert(css.includes('.machine-layout.tree-open .machine-context'));
 assert(css.includes('grid-template-columns:minmax(196px,var(--wb-rail)) 7px minmax(0,1fr)'));
 assert(css.includes('@media(max-width:760px)'));
-const start=source.indexOf('const TREE_FOLD_KEY =');
+const start=source.indexOf('const TREE_FOLD_KEY');
 const end=source.indexOf('function renderMachineSwitcher()',start);
 assert(start>=0&&end>start,'Real rail/folder functions must be present');
 const storage=new Map();let renders=0;let navigated=[];
