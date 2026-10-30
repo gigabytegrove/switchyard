@@ -588,7 +588,7 @@ function openMachine(host){
   for(const id of ['fileAsset','dockerAsset','healthAsset','serviceAsset'])if(asset)$('#'+id).value=asset.id;
   $('#filePath').value='.';
   state.currentTab=[...state.tabs.keys()].find(id=>normalizedHost(state.tabs.get(id).asset.host)===state.machineHost)||null;
-  updateMachineHeader();renderTabs();renderMachineOverview();renderDesktopList();
+  updateMachineHeader();renderTabs();renderMachineOverview();renderDesktopList();renderMachineSwitcher();
   navigate('machine');machineTab(state.currentTab?'terminals':'overview');
 }
 function renderMachineOverview(){
@@ -1088,7 +1088,7 @@ function applyTerminalLayout() {
   if(grid)requestAnimationFrame(()=>requestAnimationFrame(fitVisibleSession));
 }
 
-function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); updateMachineHeader(); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
+function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); updateMachineHeader(); renderMachineSwitcher(); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
 function closeTab(id) {
   const t=state.tabs.get(id);if(!t)return;
   t.ws?.close();t.terminal.dispose();state.tabs.delete(id);
@@ -1893,7 +1893,7 @@ function selectDesktopTab(id) {
   if (!desktopTabs.has(id)) return;
   currentDesktopTab = id; const session = desktopTabs.get(id);
   if (session?.record?.host) state.machineHost = normalizedHost(session.record.host);
-  updateMachineHeader(); navigate('desktops'); renderDesktopTabs();
+  updateMachineHeader(); renderMachineSwitcher(); navigate('desktops'); renderDesktopTabs();
   requestAnimationFrame(() => { fitDesktop(session); session.surface.focus(); });
 }
 function closeDesktopTab(id) {
