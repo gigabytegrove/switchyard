@@ -309,3 +309,60 @@ button:disabled {cursor:not-allowed;opacity:.5}
 @media(max-width:760px){#page-machine,.machine-layout{height:calc(100dvh - 150px);min-height:460px}:root{--wb-rail:195px}.machine-layout{display:grid;grid-template-columns:var(--wb-rail) minmax(0,1fr)}.machine-context{display:flex;border-bottom:0}.workbench-command-bar{padding:0 8px}.workbench-machine-text h1{font-size:13px}.workbench-command-bar #machineInfoToggle,.workbench-command-bar #machineAddDesktop{display:none}.workbench-command-bar #machinePrimaryConnect{padding:0 7px;font-size:10px}.workbench-launcher{padding:20px!important}.workbench-session-tab{max-width:148px;min-width:96px;font-size:11px;padding:0 9px}.workbench-desktop .desktop-viewports{height:55dvh}}
 @media(max-width:520px){:root{--wb-rail:144px}.tree-title strong{font-size:12px}.tree-title>span{font-size:10px}.tree-icon-btn{min-width:26px;height:28px;font-size:12px}.workbench-tree-head{padding:7px 5px}.tree-machine{gap:4px;padding-left:calc(4px + var(--tree-level,0)*6px)}.tree-machine-icon{display:none}.tree-machine-copy strong{font-size:11px}.tree-machine-copy small{font-size:9px}.tree-protocols{display:none}#machineSwitchSearch{margin:7px 5px;width:calc(100% - 10px);padding:0 5px;font-size:11px}.workbench-command-bar #machineInfoToggle,.workbench-command-bar #machineAddDesktop{display:none}.workbench-glyph{display:none}.workbench-command-bar #machinePrimaryConnect{min-width:62px;overflow:hidden}.workbench-launcher{padding:14px!important}.workbench-connect-row{gap:7px;padding:12px 3px}.workbench-connect-symbol{display:none}.workbench-connect-copy strong{font-size:12px}.workbench-connect-copy small{font-size:10px}.workbench-connect-action{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.tree-machine,.workbench-session-tab,.workbench-connect-row{transition:none!important}}
+
+/* v0.5.3: high-density operator workspace, preserving Signal Desk's red/graphite identity */
+:root{--wb-rail:276px}
+.machine-layout{grid-template-columns:minmax(196px,var(--wb-rail)) 7px minmax(0,1fr)}
+.machine-rail-resize{position:relative;z-index:8;background:#e5e6ea;cursor:col-resize;border-right:1px solid #c9ccd5;border-left:1px solid #d7d8df;touch-action:none;outline-offset:-2px}
+.machine-rail-resize::before{content:"";display:block;position:absolute;width:2px;height:36px;top:50%;left:2px;transform:translateY(-50%);background:#aeb3be}
+.machine-rail-resize:hover,.machine-rail-resize:focus-visible,.rail-resizing .machine-rail-resize{background:#d7b1b9;border-color:#a82337}
+.rail-resizing{user-select:none;cursor:col-resize}
+#machineSwitcher:focus-within{scrollbar-color:#a6abb5 transparent}
+.tree-folder-line:focus-within{background:#f0f1f4}
+.tree-folder-toggle:focus-visible,.tree-machine:focus-visible,.workbench-session-tab:focus-visible{outline:2px solid var(--sw-red)!important;outline-offset:-2px}
+.tree-machine,.tree-folder-toggle,.workbench-connect-row{transition:background 150ms ease,color 150ms ease}
+.tree-machine.active .tree-machine-copy strong{color:#921b2d}
+.tree-shortcut{border:1px solid #ccd0d8;background:#f7f7f9;padding:2px 5px;font:700 10px/1.3 Consolas,monospace;color:#494e5c}
+.tree-foot{justify-content:flex-start;gap:9px}
+.workbench-command-bar:focus-within{z-index:2}
+.workbench-session-strip{overscroll-behavior-x:contain}
+.workbench-session-tab{min-height:40px}
+.workbench-session-tab[aria-selected="true"]{color:#961e30}
+.workbench-session-tab:hover{box-shadow:inset 0 -2px 0 #b72237}
+.workbench-connect-row:focus-visible{background:#fff3f5;outline:2px solid #b72237!important;outline-offset:-2px}
+.workbench-connect-row:hover .workbench-connect-action{transform:translateX(3px)}
+.workbench-connect-action{transition:transform 150ms ease}
+.tree-mobile-toggle{display:none;align-items:center;gap:6px;height:35px;flex:0 0 auto;padding:0 9px;background:#fff;border:1px solid #c3c6cf;color:#292c34;font-size:12px;font-weight:750}
+#machineInfoDrawer.hidden{display:none!important}
+.workbench-stage>.machine-panel{overscroll-behavior-y:contain}
+@media(max-width:1000px) and (min-width:761px){.machine-layout{grid-template-columns:minmax(196px,var(--wb-rail)) 7px minmax(0,1fr)}}
+@media(max-width:760px){
+ #page-machine,.machine-layout{height:calc(100dvh - 150px)}
+ .machine-layout{display:block;position:relative;overflow:hidden}
+ .machine-work-area{height:100%;width:100%}
+ .machine-rail-resize{display:none}
+ .tree-mobile-toggle{display:flex}
+ .machine-context{position:absolute;inset:0 auto 0 0;width:min(310px,calc(100vw - 50px));height:100%;z-index:31;background:#fff;box-shadow:12px 0 36px #16161d22;transform:translateX(-103%);transition:transform 180ms ease;padding:0;border-right:1px solid #bfc3cd}
+ .machine-layout.tree-open .machine-context{transform:translateX(0)}
+ .machine-layout.tree-open::after{content:"";position:absolute;z-index:30;inset:0;background:#10121c6b;cursor:pointer}
+ .workbench-tree-head{padding:10px 12px}
+ #machineSwitcher{display:block;max-height:none;overflow-y:auto;padding:4px 10px 16px}
+ .tree-machine-icon{display:grid}.tree-protocols{display:block}
+ .tree-machine-copy strong{font-size:13px}.tree-machine-copy small{font-size:11px}
+ .workbench-command-bar{gap:7px}
+ .workbench-command-bar .machine-masthead-actions{margin-left:auto}
+ .workbench-command-bar #machinePrimaryConnect{font-size:11px;min-width:90px}
+ .workbench-command-bar #machineInfoToggle{display:inline-flex}
+ .workbench-launcher{padding:clamp(18px,4vw,30px)!important}
+ .workbench-desktop .desktop-viewports{height:calc(100dvh - 275px);min-height:220px}
+}
+@media(max-width:520px){
+ .tree-mobile-toggle span{display:none}
+ .tree-mobile-toggle{width:36px;justify-content:center;font-size:17px;padding:0}
+ .workbench-glyph{display:none}
+ .workbench-machine-text{max-width:calc(100vw - 190px)}
+ .workbench-command-bar .machine-masthead-actions #machinePrimaryConnect{min-width:73px}
+ .workbench-session-tab{min-width:94px}
+ .workbench-connect-action{white-space:nowrap}
+}
+@media(prefers-reduced-motion:reduce){.machine-context,.workbench-connect-action{transition:none!important}}

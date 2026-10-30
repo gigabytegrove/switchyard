@@ -132,6 +132,14 @@ function initMachineWorkspace() {
   $('#machineSwitchSearch').addEventListener('input', renderMachineSwitcher);
   $('#machinePrimaryConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id).catch(showError);});
   $('#machineTerminalConnect').addEventListener('click', () => {const a=machineAsset(); if(a) connect(a.id).catch(showError);});
+  $('#workbenchSessions').addEventListener('auxclick',event=>{
+    if(event.button!==1)return;
+    const element=event.target.closest('.workbench-session-tab');
+    if(!element||!element.dataset.sessionId)return;
+    event.preventDefault();
+    const id=element.dataset.sessionId;
+    if(state.tabs.has(id))closeTab(id);else if(desktopTabs.has(id))closeDesktopTab(id);
+  });
   $('#workbenchSessions').addEventListener('keydown', event => {
     if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
     const tabs = $$('[role="tab"]', $('#workbenchSessions'));
@@ -293,7 +301,7 @@ function renderMachineSwitcher() {
   const target=$('#machineSwitcher');if(!target)return;
   target.replaceChildren();
   const query=($('#machineSwitchSearch').value||'').trim().toLowerCase();
-  const all=machines(),folders=state.folders,byId=new Map(folders.map(f=>[f.id,f]));
+  const all=machines().sort((a,b)=>(a.ssh[0]?.label||a.desktops[0]?.label||a.host).localeCompare((b.ssh[0]?.label||b.desktops[0]?.label||b.host),undefined,{numeric:true,sensitivity:'base'})),folders=state.folders,byId=new Map(folders.map(f=>[f.id,f]));
   $('#treeMachineCount').textContent=`${all.length} machine${all.length===1?'':'s'}`;
   const matches=all.filter(m=>{
     const chain=[];let f=byId.get(m.folder_id);const seen=new Set();
@@ -306,7 +314,7 @@ function renderMachineSwitcher() {
     const title=m.ssh[0]?.label||m.desktops[0]?.label||m.host;
     const item=button('','tree-machine'+(m.host===state.machineHost?' active':''),()=>openMachine(m.host));
     item.style.setProperty('--tree-level',String(level));
-    item.setAttribute('aria-label',`Select ${title}, ${m.host}`);
+    item.setAttribute('aria-label',`Select ${title}, ${m.host}`);item.title=`${title} · ${m.host}`;
     if(m.host===state.machineHost)item.setAttribute('aria-current','page');
     item.addEventListener('dblclick',()=>{if(m.ssh.length)connect(m.ssh[0].id).catch(showError);else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);});
     const copy=node('span','tree-machine-copy');copy.append(node('strong','',title),node('small','mono',m.host));
@@ -325,10 +333,8 @@ function renderMachineSwitcher() {
       const num=count(id);if(query&&!num&&!folder.name.toLowerCase().includes(query))return;
       const line=node('div','tree-folder-line');line.style.setProperty('--tree-level',String(level-1));
       const closed=foldedFolders.has(id)&&!query;
-      const toggle=button((closed?'▸':'▾')+'  '+folder.name,'tree-folder-toggle',()=>{
-        if(foldedFolders.has(id))foldedFolders.delete(id);else foldedFolders.add(id);renderMachineSwitcher();
-      });
-      toggle.setAttribute('aria-expanded',String(!closed));
+      const toggle=button((closed?'▸':'▾')+'  '+folder.name,'tree-folder-toggle',()=>setFolderFolded(id,!foldedFolders.has(id)));
+      toggle.dataset.folderId=id;toggle.title=folder.name;toggle.setAttribute('aria-expanded',String(!closed));
       toggle.setAttribute('aria-label',`${folder.name}, ${num} machines`);
       const edit=button('⋯','tree-folder-menu',()=>showFolderDialog(folder));
       edit.setAttribute('aria-label','Edit '+folder.name);
@@ -336,11 +342,11 @@ function renderMachineSwitcher() {
       if(closed)return;
     }
     for(const m of own)renderMachine(m,level);
-    for(const f of folders.filter(f=>(f.parent_id||'')===id))renderFolder(f.id,level+1);
+    for(const f of folders.filter(f=>(f.parent_id||'')===id).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'})))renderFolder(f.id,level+1);
   };
   const unfiled=groups.get('')||[];
   if(unfiled.length){target.append(node('div','tree-group-label','UNFILED'));for(const m of unfiled)renderMachine(m,0);}
-  for(const f of folders.filter(f=>!f.parent_id||!byId.has(f.parent_id)))renderFolder(f.id,1);
+  for(const f of folders.filter(f=>!f.parent_id||!byId.has(f.parent_id)).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'})))renderFolder(f.id,1);
   if(!target.children.length)target.append(node('div','context-empty',query?'No matching machines.':'No connections yet. Choose + to add one.'));
 }
 function toggleMachineInfo(show=!$('#machineInfoDrawer').classList.contains('hidden')) {
@@ -364,14 +370,14 @@ function renderWorkbenchSessions() {
   home.setAttribute('role','tab');home.setAttribute('aria-selected',String(state.machineTab==='overview'));nav.append(home);
   for(const [id,session] of state.tabs){
     const wrap=node('div','workbench-session-item'),active=state.machineTab==='terminals'&&state.currentTab===id;
-    const tab=button('›_  '+session.asset.label,'workbench-session-tab'+(active?' active':''),()=>selectTab(id));
+    const tab=button('›_  '+session.asset.label+(session.ws?.readyState===WebSocket.CLOSED?' · Disconnected':''),'workbench-session-tab'+(active?' active':''),()=>selectTab(id));tab.dataset.sessionId=id;
     tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(active));
     const close=button('×','workbench-tab-close',()=>closeTab(id));close.setAttribute('aria-label','Close SSH session for '+session.asset.label);
     wrap.append(tab,close);nav.append(wrap);
   }
   for(const [id,session] of desktopTabs){
     const wrap=node('div','workbench-session-item'),active=state.machineTab==='desktops'&&currentDesktopTab===id;
-    const tab=button('▣  '+session.record.label,'workbench-session-tab'+(active?' active':''),()=>selectDesktopTab(id));
+    const tab=button('▣  '+session.record.label,'workbench-session-tab'+(active?' active':''),()=>selectDesktopTab(id));tab.dataset.sessionId=id;
     tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(active));
     const close=button('×','workbench-tab-close',()=>closeDesktopTab(id));close.setAttribute('aria-label','Disconnect '+session.record.label);
     wrap.append(tab,close);nav.append(wrap);
@@ -402,12 +408,13 @@ function updateTerminalStatus() {
 
 function openMachine(host){
   state.machineHost=normalizedHost(host);
+  setMachineTreeOpen(false);
   const asset=machineAsset();
   for(const id of ['fileAsset','dockerAsset','healthAsset'])if(asset)$('#'+id).value=asset.id;
   $('#filePath').value='.';
   state.currentTab=[...state.tabs.keys()].find(id=>normalizedHost(state.tabs.get(id).asset.host)===state.machineHost)||null;
   updateMachineHeader();renderTabs();renderMachineOverview();renderDesktopList();
-  navigate('machine');machineTab('overview');
+  navigate('machine');machineTab(state.currentTab?'terminals':'overview');
 }
 function renderMachineOverview(){
   const asset=machineAsset(),desktops=machineDesktops(),target=$('#machineOverviewContent');target.replaceChildren();
@@ -437,7 +444,7 @@ function renderMachineOverview(){
     list.append(action);
   }
   if(!asset&&!desktops.length)list.append(node('div','context-empty','No connection profiles exist for this machine. Add SSH or remote desktop access.'));
-  target.append(list,node('div','workbench-connection-note','Double-click a machine in the folder tree to open its first connection. Open sessions remain available in the tabs above.'));
+  target.append(list,node('div','workbench-connection-note','Double-click a machine to connect. Ctrl+K searches your machines. Drag the divider to resize the directory. Open sessions remain in the tabs above.'));
 }
 function machineTab(tab){
   if(['files','docker','health'].includes(tab)){navigate(tab);return;}
@@ -599,7 +606,7 @@ async function connect(aid) {
     try { const message = JSON.parse(event.data); if (message.type === 'data') tab.terminal.write(message.data); else if (message.type === 'error') { tab.terminal.writeln('\r\n\x1b[31m' + message.message + '\x1b[0m'); toast(message.message, true); } }
     catch { tab.terminal.writeln('\r\nUnexpected terminal message.'); }
   };
-  ws.onerror = () => {tab.terminal.writeln('\r\n\x1b[31mConnection failed. Review host trust and SSH credentials.\x1b[0m'); updateTerminalStatus();};
+  ws.onerror = () => {tab.terminal.writeln('\r\n\x1b[31mConnection transport failed. Check host trust, SSH credentials and network reachability.\x1b[0m');toast('Unable to connect to '+asset.host+'. Check SSH credentials and Host trust.',true);updateTerminalStatus();};
   ws.onclose = () => { tab.password = null; tab.terminal.writeln('\r\n\x1b[90m[Session disconnected — use Reconnect to open a new session]\x1b[0m'); renderTabs(); updateTerminalStatus(); }; 
   tab.terminal.onData(data => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data })); });
   tab.terminal.onResize(size => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows })); });
@@ -623,7 +630,7 @@ function renderTabs() {
   $('#terminalCount').textContent = state.tabs.size; updateTerminalStatus(); renderWorkbenchSessions();
 }
 function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); updateMachineHeader(); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
-function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = [...state.tabs.keys()].find(k => normalizedHost(state.tabs.get(k).asset.host) === state.machineHost) || null; renderTabs(); updateTerminalStatus(); if (state.currentTab) selectTab(state.currentTab); }
+function closeTab(id) { const t = state.tabs.get(id); if (!t) return; t.ws?.close(); t.terminal.dispose(); state.tabs.delete(id); $('#term-' + id)?.remove(); if (state.currentTab === id) state.currentTab = [...state.tabs.keys()].find(k => normalizedHost(state.tabs.get(k).asset.host) === state.machineHost) || null; renderTabs(); updateTerminalStatus(); if (state.currentTab) selectTab(state.currentTab); else if (state.machineTab==='terminals') machineTab('overview'); }
 function renderFileSelect() {
   const select = $('#fileAsset'); const selected = select.value; select.replaceChildren(node('option', '', 'Select an asset'));
   for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; select.append(opt); }
