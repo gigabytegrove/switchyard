@@ -124,6 +124,10 @@ The machine-specific workspace rules are in `static/workspace.css`, loaded after
 | Security | SSH host-key trust, optional TOTP for HTTPS proxy, session controls, CSRF origin verification, activity journal |
 | Backups | Consistent database snapshot, host trust, and TOTP recovery key with SHA-256 manifest (sensitive backup) |
 
+## Linux systemd service manager
+
+The Services workspace lists systemd units over configured SSH machines, shows unit state and descriptions, allows explicitly confirmed start/stop/restart operations, and opens the last 100 journal messages. Commands use the existing SSH account and its remote permissions, without automatic privilege escalation. Service changes are audited and are available only for Linux hosts using systemd. Remote service operations still require live-machine validation.
+
 ## SSH connection diagnostics
 
 A machine's **Check SSH port** and the Connections asset directory's **Check first 20 SSH ports** actions probe TCP reachability without credentials or modifying host trust. Batch checks use up to four concurrent probes, each bounded to four seconds. A reachable TCP port is not proof of SSH host identity or successful authentication.

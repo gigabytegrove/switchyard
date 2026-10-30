@@ -554,7 +554,7 @@ function openMachine(host){
   state.machineHost=normalizedHost(host);
   setMachineTreeOpen(false);
   const asset=machineAsset();
-  for(const id of ['fileAsset','dockerAsset','healthAsset'])if(asset)$('#'+id).value=asset.id;
+  for(const id of ['fileAsset','dockerAsset','healthAsset','serviceAsset'])if(asset)$('#'+id).value=asset.id;
   $('#filePath').value='.';
   state.currentTab=[...state.tabs.keys()].find(id=>normalizedHost(state.tabs.get(id).asset.host)===state.machineHost)||null;
   updateMachineHeader();renderTabs();renderMachineOverview();renderDesktopList();
@@ -632,7 +632,7 @@ async function setShell() {
   navigate('machine'); machineTab('overview');
 }
 async function refreshAssets() {
-  state.assets = await api('/assets'); renderAssets(); renderQuick(); renderFileSelect(); renderDockerSelect(); renderHealthSelect();
+  state.assets = await api('/assets'); renderAssets(); renderQuick(); renderFileSelect(); renderDockerSelect(); renderServiceSelect(); renderHealthSelect();
   renderMachineDirectory(); renderMachineSwitcher();
   const info = await api('/overview');
   $('#metricAssets').textContent = info.assets;
@@ -650,11 +650,12 @@ function navigate(page) {
   $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page || (page === 'machine' && el.dataset.page === 'machines')));
   if (page === 'machine') {updateMachineHeader();renderWorkbenchSessions();}
-  $('#bread').textContent = ({ machine:'Machine / ' + machineTitle(), machines:'Machines', overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
+  $('#bread').textContent = ({ machine:'Machine / ' + machineTitle(), machines:'Machines', overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', services: 'System services', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
   if (page === 'desktops') { refreshDesktops().catch(showError); refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); fitDesktop(desktopCurrent()); }
   if (page === 'runbooks') refreshRunbooks().catch(showError);
   if (page === 'files') {const a=machineAsset(); if(a){$('#fileAsset').value=a.id;browseFiles().catch(showError);}}
   if (page === 'docker') {const a=machineAsset(); if(a){$('#dockerAsset').value=a.id;refreshDocker().catch(showError);}}
+  if (page === 'services') {const a=machineAsset();if(a)$('#serviceAsset').value=a.id;refreshServices().catch(showError);}
   if (page === 'health') {const a=machineAsset();if(a)$('#healthAsset').value=a.id;refreshHealthHistory().catch(showError);}
   if (page === 'vault') vaultStatus().catch(showError);
   if (page === 'trust') refreshHosts().catch(showError);
@@ -1124,6 +1125,74 @@ async function deleteRemote(a, path, directory) {
   await api(`/assets/${a.id}/files?directory=${directory}`, { method: 'DELETE', body: { path }, headers });
   toast('Remote item deleted.'); await browseFiles();
 }
+
+let serviceRows=[];
+function renderServiceSelect(){
+  const el=$('#serviceAsset'),selected=el.value;
+  el.replaceChildren(new Option('Choose an SSH machine',''));
+  for(const a of state.assets)el.add(new Option(a.label+' · '+a.host,a.id));
+  if(state.assets.some(a=>a.id===selected))el.value=selected;
+}
+function renderServices(){
+  const list=$('#serviceList'),query=$('#serviceSearch').value.trim().toLowerCase();
+  list.replaceChildren();
+  const rows=serviceRows.filter(item=>(item.unit+' '+item.active+' '+item.sub+' '+item.description).toLowerCase().includes(query));
+  if(!rows.length){list.append(node('div','empty-state',serviceRows.length?'No matching systemd services.':'No systemd services loaded.'));return;}
+  for(const item of rows){
+    const row=node('div','service-row');
+    const info=node('div','service-identity');
+    info.append(node('strong','mono',item.unit),node('small','',item.description));
+    const status=node('div',item.active==='active'?'service-state-active':item.active==='failed'?'status-bad':'service-state-idle',item.active+' / '+item.sub);
+    const actions=node('div','file-tools');
+    actions.append(button('Journal','mini-btn',()=>showServiceJournal(item.unit).catch(showError)));
+    actions.append(button('Start','mini-btn',()=>operateService(item,'start').catch(showError)));
+    actions.append(button('Restart','mini-btn',()=>operateService(item,'restart').catch(showError)));
+    actions.append(button('Stop','mini-btn danger',()=>operateService(item,'stop').catch(showError)));
+    row.append(info,status,actions);list.append(row);
+  }
+}
+async function refreshServices(){
+  const selected=$('#serviceAsset').value;
+  const asset=state.assets.find(x=>x.id===selected);
+  if(!asset){serviceRows=[];renderServices();$('#serviceStatus').textContent='Choose a configured SSH host first.';return;}
+  const headers=await fileAuth(asset);if(headers===null)return;
+  const status=$('#serviceStatus');
+  status.textContent='Loading systemd services from '+asset.host+'…';
+  try{
+    const data=await api('/assets/'+asset.id+'/services',{headers});
+    if($('#serviceAsset').value!==asset.id)return;
+    serviceRows=data.services;
+    renderServices();
+    status.textContent=data.count+' systemd services on '+asset.host+(data.limited?' (first 500 shown)':'')+'. Actions use the remote account’s existing permissions.';
+  }catch(error){
+    serviceRows=[];renderServices();status.textContent='Failed to load services: '+error.message;throw error;
+  }
+}
+async function operateService(item,action){
+  const asset=state.assets.find(x=>x.id===$('#serviceAsset').value);
+  if(!asset)throw Error('Choose an SSH machine first.');
+  const msg=action==='stop'?'Stopping this service may disconnect your remote machine or critical workloads.':'The remote systemd manager will attempt this operation.';
+  if(!await confirmAction(action.charAt(0).toUpperCase()+action.slice(1)+' '+item.unit,
+    msg+' '+action+' '+item.unit+' on '+asset.host+'?',action.charAt(0).toUpperCase()+action.slice(1)))return;
+  const headers=await fileAuth(asset);if(headers===null)return;
+  $('#serviceStatus').textContent='Executing '+action+' for '+item.unit+'…';
+  await api('/assets/'+asset.id+'/services/action',{method:'POST',body:{unit:item.unit,action,confirmed:true},headers});
+  toast('Requested '+action+' for '+item.unit+'.');
+  await refreshServices();
+}
+async function showServiceJournal(unit){
+  const asset=state.assets.find(x=>x.id===$('#serviceAsset').value);
+  if(!asset)throw Error('Choose an SSH machine first.');
+  const headers=await fileAuth(asset);if(headers===null)return;
+  $('#serviceLogArea').classList.remove('hidden');
+  $('#serviceLogTitle').textContent='Journal · '+unit;
+  $('#serviceLogText').textContent='Retrieving up to 100 journal entries…';
+  try{
+    const response=await api('/assets/'+asset.id+'/services/'+encodeURIComponent(unit)+'/logs',{headers});
+    $('#serviceLogText').textContent=response.lines||'No journal entries returned.';
+  }catch(error){$('#serviceLogText').textContent='Journal unavailable: '+error.message;throw error;}
+}
+
 function renderDockerSelect() {
   const el = $('#dockerAsset'); const selected = el.value; el.replaceChildren(node('option', '', 'Select a Docker host'));
   for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; el.append(opt); }
@@ -2054,6 +2123,10 @@ function bind() {
   $('#cancelRunbook').addEventListener('click', resetRunbookForm);
   $('#runbookForm').addEventListener('submit', safeAsync(saveRunbook));
   $('#runbookRefresh').addEventListener('click', safeAsync(refreshRunbooks));
+  $('#serviceRefresh').addEventListener('click',safeAsync(refreshServices));
+  $('#serviceAsset').addEventListener('change',()=>{serviceRows=[];renderServices();$('#serviceLogArea').classList.add('hidden');});
+  $('#serviceSearch').addEventListener('input',renderServices);
+  $('#serviceLogClose').addEventListener('click',()=>$('#serviceLogArea').classList.add('hidden'));
   $('#dockerRefresh').addEventListener('click', safeAsync(refreshDocker));
   $('#dockerShowContainers').addEventListener('click', () => dockerView('containers'));
   $('#dockerShowImages').addEventListener('click', () => dockerView('images'));

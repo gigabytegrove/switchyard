@@ -84,6 +84,7 @@ http://ops.home.arpa:9791"></textarea>
         <button data-page="machines" class="nav-item active"><span class="nav-symbol">▤</span> Connections</button>
         <button data-page="files" class="nav-item"><span class="nav-symbol">⇅</span> Files</button>
         <button data-page="docker" class="nav-item"><span class="nav-symbol">⬡</span> Docker</button>
+        <button data-page="services" class="nav-item"><span class="nav-symbol">⚙</span> Services</button>
         <button data-page="health" class="nav-item"><span class="nav-symbol">◉</span> Health</button>
         <button data-page="runbooks" class="nav-item"><span class="nav-symbol">⌘</span> Runbooks</button>
         <button data-page="activity" class="nav-item"><span class="nav-symbol">◷</span> Activity</button>
@@ -172,6 +173,21 @@ http://ops.home.arpa:9791"></textarea>
       </section>
       <section id="page-files" class="page content-page hidden"><div class="section-kicker">04 — SFTP OPERATIONS</div><div class="heading-row"><div><h1>Files, directly.</h1><p>Browse and transfer without leaving your browser.</p></div></div><div class="file-controls"><label>Remote host<select id="fileAsset"></select></label><label>Directory<input id="filePath" value="." placeholder="/var/log"></label><button id="fileBrowse" class="action-small">Browse</button><button type="button" id="fileUploadButton" class="upload-button">Upload file</button><input type="file" id="fileUpload" multiple hidden><button class="action-quiet" id="fileMkdir">New folder</button></div><div id="fileLocation" class="path-bar">No directory selected</div><div id="fileTransferStatus" role="status" aria-live="polite" class="path-bar">Transfers are limited to 64 MiB per file; existing remote files are never overwritten.</div><div id="fileList" class="asset-table"><div class="empty-state">Select a machine to browse its files.</div></div></section>
       <section id="page-docker" class="page content-page hidden"><div class="section-kicker">05 — CONTAINER OPERATIONS</div><div class="heading-row"><div><h1>Containers, in context.</h1><p>Manage Docker on your connected servers over verified SSH — no privileged local socket mount.</p></div></div><div class="file-controls"><label>Docker host<select id="dockerAsset"></select></label><button id="dockerRefresh" class="action-small">Load containers</button></div><div id="dockerHostLabel" class="path-bar">Choose a server with Docker installed and an authorized SSH account.</div><div class="file-controls"><button id="dockerShowContainers" class="action-quiet">Containers</button><button id="dockerShowImages" class="action-quiet">Images</button><button id="dockerShowNetworks" class="action-quiet">Networks</button><button id="dockerShowVolumes" class="action-quiet">Volumes</button><button id="dockerShowStacks" class="action-quiet">Compose stacks</button></div><div id="dockerSummary" class="path-bar" role="status">No remote daemon selected.</div><div id="dockerList" class="asset-table"><div class="empty-state">Choose an SSH asset to inspect its containers.</div></div><div id="dockerDetails" class="docker-detail hidden" role="region" aria-label="Container details"><div class="two-heading"><h2 id="dockerDetailTitle">Container details</h2><button class="action-quiet" id="dockerDetailClose">Close details</button></div><div id="dockerDetailContent"></div></div></section>
+      
+      <section id="page-services" class="page content-page hidden" aria-labelledby="serviceHeading">
+        <div class="heading-row"><div><h1 id="serviceHeading">Linux services.</h1><p>Inspect and control systemd services over your existing SSH connection.</p></div></div>
+        <div class="file-controls">
+          <label for="serviceAsset">SSH host<select id="serviceAsset"></select></label>
+          <button type="button" class="action-small" id="serviceRefresh">Load services</button>
+          <label for="serviceSearch">Filter units<input id="serviceSearch" type="search" placeholder="sshd, nginx, docker…"></label>
+        </div>
+        <p id="serviceStatus" class="path-bar" role="status" aria-live="polite">Choose an SSH machine and load systemd units. Actions require remote permissions.</p>
+        <div id="serviceList" class="asset-table"><div class="empty-state">No services loaded.</div></div>
+        <section id="serviceLogArea" class="service-log-region hidden" aria-labelledby="serviceLogTitle">
+          <div class="two-heading"><h2 id="serviceLogTitle">Service journal</h2><button id="serviceLogClose" class="action-quiet" type="button">Close journal</button></div>
+          <pre id="serviceLogText" class="log-console" tabindex="0" aria-label="Remote systemd journal output"></pre>
+        </section>
+      </section>
       <section id="page-health" class="page content-page hidden">
         <div class="section-kicker">06 — REMOTE TELEMETRY</div>
         <div class="heading-row"><div><h1>Read the machine.</h1><p>Agentless Linux status through a trusted SSH connection. Each check saves a bounded historical snapshot.</p></div><button id="healthRefresh" class="action-small">Check health</button></div>
