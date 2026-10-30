@@ -1,50 +1,50 @@
-"""Station 02 operator experience regression tests."""
+"""Assert the restored SwitchYard identity and maximum-view terminal architecture."""
 from pathlib import Path
 import re
+
 ROOT=Path(__file__).resolve().parents[1]
 HTML=(ROOT/'static/index.html').read_text()
 CSS=(ROOT/'static/style.css').read_text()
 JS=(ROOT/'static/app.js').read_text()
 
-def test_single_css_owner_busted_cache_and_obvious_version_marker():
-    assert 'href="/static/style.css?v=0.5.6-dev.1"' in HTML
-    assert 'src="/static/app.js?v=0.5.6-dev.1"' in HTML
-    assert 'STATION 02 · 0.5.6-dev.1' in HTML
-    assert '/static/workspace.css' not in HTML
-    assert not (ROOT/'static/workspace.css').exists()
-    assert ':root{' in CSS and '@import' not in CSS
-    for token in ('--ink:#203a30','--signal:#dff18a','--off:#f7f7ef','--accent:#9b3c28'):
-        assert token in CSS
-    assert '.station-header{' in CSS and '.directory-hero{' in CSS
-    assert '.machine-entry-actions button{' in CSS
-    assert '.machine-context{position:absolute;' in CSS
+def test_restored_brand_and_versioned_assets():
+    assert 'href="/static/style.css?v=0.5.7-dev.1"' in HTML
+    assert 'src="/static/app.js?v=0.5.7-dev.1"' in HTML
+    assert '0.5.7-dev.1' in HTML
+    assert 'src="/static/switchyard-mark.webp"' in HTML
+    assert 'station-monogram' not in HTML
+    assert '--sw-logo-red:#bc293a' in CSS
+    assert '--sw-neutral-800:#27272b' in CSS
+    assert '.station-brand-mark' in CSS
     assert 'color-scheme:light' in CSS
+    assert '/static/workspace.css' not in HTML
 
-def test_not_previous_shell_or_previous_workflow():
-    assert 'class="sidebar"' not in HTML
-    assert 'class="brand"' not in HTML
-    assert 'class="station-header"' in HTML
-    assert 'id="page-machines" class="page machine-directory-page"' in HTML
-    assert 'Where to?' in HTML
-    assert 'machine-rail-resize' in HTML and '.machine-rail-resize{display:none!important}' in CSS
-    assert 'id="machineBackToDirectory"' in HTML
-    assert 'id="treeClose"' in HTML
-    assert 'id="machineCommandMenu"' in HTML
-    assert "if (page === 'machines') page = 'machine';" not in JS
-    assert "navigate('machines')" in JS
-    assert "machine.ssh[0].id" in JS
-    assert "machine.desktops[0]" in JS
+def test_session_is_default_focus_and_can_undock_components():
+    assert 'id="workbenchFocusToggle"' in HTML
+    assert 'id="workbenchSessionsToggle"' in HTML
+    assert 'id="machineTreeToggle"' in HTML
+    assert 'id="machineInfoDrawer"' in HTML
+    assert "readUiPreference(SESSION_FOCUS_PREF,true)" in JS
+    assert "session && state.focusPreferred !== false" in JS
+    assert "state.sessionDockOpen = !state.sessionDockOpen" in JS
+    assert 'function fitVisibleSession()' in JS
+    assert 'ResizeObserver' in JS
+    assert 'window.addEventListener' in JS
+    assert "event.key !== 'F8'" in JS
+    assert '#shell.session-focus .station-header' in CSS
+    assert '#shell.session-focus .workbench-terminal .terminal-heading' in CSS
+    assert '#shell.session-focus .workbench-terminal .terminal-tabs' in CSS
+    assert '#shell.session-focus .terminal-panels .terminal-host' in CSS
+    assert '#shell.session-focus .workbench-desktop .desktop-viewports' in CSS
+    assert '#shell.session-focus .machine-layout.session-dock-open' in CSS
+    assert '--sw-terminal:#1b1a1d' in CSS
 
-def test_shortcuts_mobile_access_and_no_event_binding_crashes():
-    for p in (1280,980,760,540,390):
-        assert f'@media(max-width:{p}px)' in CSS
-    assert 'prefers-reduced-motion:reduce' in CSS
-    assert '.shell.nav-open .station-navigation' in CSS
-    assert '.machine-layout.tree-open .machine-context' in CSS
-    assert "setMachineTreeOpen(false)" in JS
+def test_no_single_node_for_each_and_reduced_motion():
     assert "$$('[data-page]').forEach" in JS
     assert "$$('.page').forEach" in JS
     assert not re.findall(r'(?<!\$)\$\(([^)]{1,100})\)\.forEach\b',JS)
+    assert 'prefers-reduced-motion:reduce' in CSS
+    assert ':focus-visible' in CSS
 
 def test_inventory_starts_independently():
     assert 'await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops()])' in JS

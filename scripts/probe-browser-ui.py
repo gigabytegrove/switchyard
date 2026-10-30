@@ -124,8 +124,8 @@ def run():
                 cdp.until("""!!document.querySelector('#shell:not(.hidden)') &&
                   !!document.querySelector('#page-machines:not(.hidden)') &&
                   document.getElementById('machineDirectory').textContent.length>0""",
-                          "Station 02 directory home")
-                print(f"PASS: login -> Station 02 machine directory in {time.monotonic()-started:.2f}s",flush=True)
+                          "SwitchYard compact directory home")
+                print(f"PASS: login -> SwitchYard compact machine directory in {time.monotonic()-started:.2f}s",flush=True)
 
                 # Seed a disposable, reserved-address machine through the real
                 # authenticated API. Never attempt a connection to that address.
@@ -141,9 +141,10 @@ def run():
                 })()""")
                 assert record["id"] and record["rows"] >= 1, record
                 assert cdp.eval("""(function(){
-                  return getComputedStyle(document.querySelector('.station-header')).backgroundColor==='rgb(32, 58, 48)' &&
-                    getComputedStyle(document.querySelector('.directory-hero')).backgroundColor==='rgb(37, 72, 58)' &&
-                    document.getElementById('stationVersion').textContent.includes('0.5.6-dev.1') &&
+                  return getComputedStyle(document.querySelector('.station-header')).backgroundColor==='rgb(39, 39, 43)' &&
+                    getComputedStyle(document.querySelector('.directory-hero')).backgroundColor==='rgb(39, 39, 43)' &&
+                    !!document.querySelector('.station-brand-mark[src="/static/switchyard-mark.webp"]') &&
+                    document.getElementById('stationVersion').textContent.includes('0.5.7-dev.1') &&
                     !document.querySelector('.sidebar');
                 })()"""), "not the unique Station 02 UI (wrong image, CSS or cached shell)"
 
@@ -169,7 +170,7 @@ def run():
                     assert result["hero"]["width"] >= width-3, result
                     assert result["roster"]["width"] >= max(width*0.88, width-160), result
                     assert result["visible"]==1 and result["entryCount"]>=1, result
-                    assert result["mobileNavigation"] == (width<=980), result
+                    assert result["mobileNavigation"] is True, result
                     cdp.screenshot(width)
                     print(f"PASS Station 02 roster at {width}px ({result['entryCount']} machines)",flush=True)
 
@@ -222,6 +223,83 @@ def run():
                   document.getElementById('machineBackToDirectory').click();
                   return !!document.querySelector('#page-machines:not(.hidden)');
                 })()"""), "back to machine directory did not restore home"
+
+                # A genuine xterm canvas, without connecting to any external
+                # SSH machine. This checks layout/fit; the separate SSH E2E
+                # suite checks the actual transport.
+                assert cdp.eval("""(function(){
+                  document.querySelector('.machine-entry-open').click();
+                  const asset=state.assets.find(a=>a.host==='192.0.2.48');
+                  if(!asset||!window.Terminal||!window.FitAddon)return false;
+                  const terminal=new window.Terminal({
+                    fontSize:14,lineHeight:1.1,cursorBlink:true,
+                    theme:{background:'#1b1a1d',foreground:'#eceaec',cursor:'#e24e62'}
+                  });
+                  const fit=new window.FitAddon.FitAddon();
+                  terminal.loadAddon(fit);
+                  state.tabs.set('layout-probe',{id:'layout-probe',asset,terminal,fit,ws:null});
+                  state.currentTab='layout-probe';
+                  navigate('terminals');
+                  const host=document.getElementById('term-layout-probe');
+                  if(!host)return false;
+                  terminal.open(host);
+                  fit.fit();
+                  terminal.write('SwitchYard focus viewport layout acceptance\\r\\n');
+                  return true;
+                })()"""), "xterm layout probe could not be constructed"
+                cdp.until("""document.getElementById('shell').classList.contains('session-focus') &&
+                  !!document.querySelector('#machinePanel-terminals:not(.hidden) .xterm-screen')""",
+                          "default focused terminal")
+                for width in (1440, 1024, 840, 620, 360):
+                    cdp.call("Emulation.setDeviceMetricsOverride",
+                             width=width,height=900,deviceScaleFactor=1,mobile=False)
+                    cdp.eval("fitVisibleSession()")
+                    geometry=cdp.eval("""(function(){
+                      const bounds=s=>{const e=document.querySelector(s);const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+                      return {
+                        viewport:innerWidth,height:innerHeight,
+                        focus:document.getElementById('shell').classList.contains('session-focus'),
+                        headerHidden:getComputedStyle(document.querySelector('.station-header')).display==='none',
+                        tabsHidden:getComputedStyle(document.querySelector('.workbench-session-dock')).display==='none',
+                        command:bounds('.workbench-command-bar'),
+                        host:bounds('.terminal-host.active'),
+                        xterm:bounds('.terminal-host.active .xterm'),
+                        horizontal:document.documentElement.scrollWidth
+                      };
+                    })()""")
+                    assert geometry['focus'] and geometry['headerHidden'] and geometry['tabsHidden'],geometry
+                    assert geometry['command']['height']<=40,geometry
+                    assert geometry['host']['width']>=width*0.94,geometry
+                    assert geometry['host']['height']>=geometry['height']*.90,geometry
+                    assert geometry['xterm']['width']>=width*.92,geometry
+                    assert geometry['xterm']['height']>=geometry['height']*.88,geometry
+                    assert geometry['horizontal']<=width+3,geometry
+                    cdp.screenshot(f"{width}-focused-terminal")
+                    print(f"PASS focus {width}px: terminal {geometry['host']['width']:.0f}x{geometry['host']['height']:.0f}, "+ 
+                          f"{100*geometry['host']['height']/geometry['height']:.1f}% viewport height",flush=True)
+
+                # Dock tabs without losing focus or terminal; exit focus to
+                # restore header; reenter with F8 (available to keyboard users).
+                cdp.call("Emulation.setDeviceMetricsOverride",width=1440,height=900,
+                         deviceScaleFactor=1,mobile=False)
+                assert cdp.eval("""(function(){
+                  const tabs=document.getElementById('workbenchSessionsToggle');
+                  tabs.click();
+                  const opened=tabs.getAttribute('aria-expanded')==='true' &&
+                    getComputedStyle(document.querySelector('.workbench-session-dock')).display!=='none';
+                  tabs.click();
+                  return opened && tabs.getAttribute('aria-expanded')==='false' &&
+                    getComputedStyle(document.querySelector('.workbench-session-dock')).display==='none';
+                })()"""), "session tab dock failed to open and close"
+                assert cdp.eval("""(function(){
+                  const focus=document.getElementById('workbenchFocusToggle');
+                  focus.click();
+                  const expanded=!document.getElementById('shell').classList.contains('session-focus') &&
+                    getComputedStyle(document.querySelector('.station-header')).display!=='none';
+                  window.dispatchEvent(new KeyboardEvent('keydown',{key:'F8',bubbles:true}));
+                  return expanded && document.getElementById('shell').classList.contains('session-focus');
+                })()"""), "focus toggle/F8 failed to restore the full viewport"
+
                 cdp.screenshot("360-directory-after-workbench")
                 assert not cdp.uncaught, f"Uncaught browser exceptions: {cdp.uncaught}"
                 print("PASS: Station 02 actual Chrome CSS colors, roster -> full workbench -> roster, "

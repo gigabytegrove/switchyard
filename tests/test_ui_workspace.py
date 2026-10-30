@@ -30,7 +30,7 @@ def test_machine_directory_is_first_screen_and_not_old_sidebar():
     assert 'Where to?' in HTML
     assert 'machine-entry-open' in JS and 'machine-connect-ssh' in JS
     assert "navigate('machines')" in JS
-    assert 'position:absolute;top:0;bottom:0;left:0;z-index:52' in CSS
+    assert '.machine-context{position:absolute;top:0;bottom:0;left:0;z-index:52' in CSS
     assert '.machine-layout.tree-open .machine-context' in CSS
     assert 'display:none!important' in CSS
 
@@ -49,11 +49,14 @@ def test_accessibility_and_viewports():
     assert ':focus-visible' in CSS and 'prefers-reduced-motion:reduce' in CSS
     for asset in ('switchyard-wordmark.webp','favicon.png'):
         assert asset in HTML and (ROOT/'static'/asset).stat().st_size>5000
-    # Station 02 uses a CSS/native monogram rather than the former inline mark.
-    assert 'station-monogram' in HTML
+    # Original branded mark is retained, not a replacement CSS monogram.
+    assert 'src="/static/switchyard-mark.webp"' in HTML
+    assert 'station-monogram' not in HTML
+    assert 'id="workbenchFocusToggle"' in HTML
+    assert 'id="workbenchSessionsToggle"' in HTML
 
 def test_release_integrity():
-    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.6-dev.1' in (ROOT/'compose.yaml').read_text()
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.7-dev.1' in (ROOT/'compose.yaml').read_text()
     assert 'container_name:' not in (ROOT/'compose.yaml').read_text()
     assert 'environment:' not in (ROOT/'compose.yaml').read_text()
     assert '/var/run/docker.sock' not in (ROOT/'compose.yaml').read_text()

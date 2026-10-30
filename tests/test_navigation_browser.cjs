@@ -30,6 +30,7 @@ const context=vm.createContext({
   document,
   state:{page:'machine',machineHost:'192.168.0.6',currentTab:null},
   updateMachineHeader:()=>calls.push('machine-header'),
+  syncWorkspaceChrome:()=>calls.push('chrome'),
   renderWorkbenchSessions:()=>calls.push('sessions'),
   machineTitle:()=> 'Test',
   machineAsset:()=>({id:17}),
