@@ -346,13 +346,14 @@ def run():
                                 rendered:!!terminal&&terminal.getBoundingClientRect().height>0};
                       });
                       return {viewport:innerWidth,canvasHeight:panel.getBoundingClientRect().height,
+                        canvasWidth:panel.getBoundingClientRect().width,
                         active,columnStyle:getComputedStyle(panel).gridTemplateColumns,
                         rowStyle:getComputedStyle(panel).gridTemplateRows,
                         overflow:document.documentElement.scrollWidth};
                     })()""")
                     assert len(split["active"])==count,split
                     assert all(row["rendered"] and row["display"]!="none" for row in split["active"]),split
-                    assert all(row["width"] >= 0.43*split["viewport"] for row in split["active"]),split
+                    assert all(row["width"] >= 0.43*split["canvasWidth"] for row in split["active"]),split
                     assert split["overflow"]<=split["viewport"]+3,split
                     if count==2:
                         assert all(row["height"]>=split["canvasHeight"]*.94 for row in split["active"]),split
