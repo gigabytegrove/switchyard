@@ -1,5 +1,7 @@
 ## 0.5.3-dev.3 — real SSH/SFTP integration qualification
 
+- Fix actual Paramiko SFTP failures: exclusive-create mode `x` does not provide write access; use `wx` for both file upload and atomic editor staging. The previous mocked editor test failed to check the writable flag and has been corrected.
+
 - Add a live OpenSSH test target to GitHub Actions source validation (loopback-only, non-production credentials).
 - Verify unknown SSH hosts are rejected, independently corroborate an Ed25519 host fingerprint, explicitly trust the key, authenticate using a saved encrypted password, and execute a real SSH command.
 - Exercise real SFTP listing, exclusive upload and download, and an authenticated interactive SSH WebSocket terminal against the disposable server.
