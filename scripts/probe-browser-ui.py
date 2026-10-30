@@ -81,7 +81,7 @@ class CDP:
 def run():
     binary = browser_executable()
     print(f"UI test browser: {binary}", flush=True)
-    with tempfile.TemporaryDirectory(prefix="switchyard-ui-") as profile:
+    with tempfile.TemporaryDirectory(prefix="switchyard-ui-", ignore_cleanup_errors=True) as profile:
         command = [binary, "--headless=new", "--no-sandbox", "--disable-gpu",
                    "--disable-dev-shm-usage", "--no-first-run",
                    "--disable-background-networking", "--disable-extensions",
@@ -163,15 +163,24 @@ def run():
 
                 cdp.call("Emulation.setDeviceMetricsOverride",
                          width=360,height=900,deviceScaleFactor=1,mobile=False)
-                assert cdp.eval("""(function(){
+                menu_state = cdp.eval("""(function(){
                   const nav=document.getElementById('navMobileToggle');
+                  const shell=document.getElementById('shell');
+                  const dismiss=document.getElementById('navDismiss');
+                  const css=getComputedStyle(nav).display;
+                  const before={shell:shell.className,expanded:nav.getAttribute('aria-expanded')};
                   nav.click();
-                  if(!document.getElementById('shell').classList.contains('nav-open'))return false;
-                  if(nav.getAttribute('aria-expanded')!=='true')return false;
-                  document.getElementById('navDismiss').click();
-                  return !document.getElementById('shell').classList.contains('nav-open') &&
-                    nav.getAttribute('aria-expanded')==='false';
-                })()"""), "mobile navigation drawer cannot open/close"
+                  const afterOpen={shell:shell.className,expanded:nav.getAttribute('aria-expanded')};
+                  dismiss.click();
+                  const afterClose={shell:shell.className,expanded:nav.getAttribute('aria-expanded')};
+                  return {css,before,afterOpen,afterClose};
+                })()""")
+                assert (
+                    "nav-open" in menu_state["afterOpen"]["shell"].split()
+                    and menu_state["afterOpen"]["expanded"] == "true"
+                    and "nav-open" not in menu_state["afterClose"]["shell"].split()
+                    and menu_state["afterClose"]["expanded"] == "false"
+                ), f"mobile navigation drawer cannot open/close: {menu_state}"
 
                 assert cdp.eval("""(function(){
                   document.getElementById('globalFind').click();
