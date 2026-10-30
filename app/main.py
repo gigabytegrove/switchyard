@@ -2157,6 +2157,82 @@ def sftp_copy(aid: str, body: SftpRename, x_ssh_password: str | None = Header(de
     return {'ok': True, 'bytes_copied': total}
 
 
+
+
+SERVICE_UNIT_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.:@-]{0,124}\.service$')
+
+
+class ServiceAction(BaseModel):
+    unit: str = Field(min_length=9, max_length=133)
+    action: Literal['start', 'stop', 'restart']
+    confirmed: bool = False
+
+    @field_validator('unit')
+    @classmethod
+    def valid_unit(cls, name: str) -> str:
+        if not SERVICE_UNIT_RE.fullmatch(name):
+            raise ValueError('Service name must be a single systemd service unit')
+        return name
+
+
+def systemd_command(aid: str, command: str, password: str | None, timeout: int = 20):
+    result = execute_runbook_ssh(fetch_asset(aid), command, password, limit_seconds=timeout)
+    if result['exit_code'] != 0:
+        message = str(result['stderr'] or result['stdout'])[:180].strip()
+        raise HTTPException(502, 'Remote systemd command failed: ' + (message or 'permission denied or service unavailable'))
+    return result['stdout']
+
+
+@app.get('/api/assets/{aid}/services')
+def list_systemd_services(aid: str, x_ssh_password: str | None = Header(default=None),
+                          _=Depends(require_auth)):
+    output = systemd_command(aid,
+        'systemctl --no-pager --plain --all list-units --type=service --no-legend',
+        x_ssh_password)
+    services = []
+    for raw in output.splitlines():
+        line = raw.strip().lstrip('●').strip()
+        pieces = line.split(None, 4)
+        if len(pieces) < 4 or not SERVICE_UNIT_RE.fullmatch(pieces[0]):
+            continue
+        services.append({'unit': pieces[0], 'load': pieces[1],
+                         'active': pieces[2], 'sub': pieces[3],
+                         'description': pieces[4][:280] if len(pieces)>4 else ''})
+        if len(services) >= 500:
+            break
+    audit('service.list', aid)
+    return {'host_id': aid, 'services': services, 'count': len(services),
+            'limited': len(services) >= 500}
+
+
+@app.post('/api/assets/{aid}/services/action')
+def operate_systemd_service(aid: str, body: ServiceAction,
+                            x_ssh_password: str | None = Header(default=None),
+                            _=Depends(require_auth)):
+    if not body.confirmed:
+        raise HTTPException(422, 'Confirm this service operation before proceeding')
+    command = 'systemctl ' + body.action + ' ' + shlex.quote(body.unit)
+    try:
+        systemd_command(aid, command, x_ssh_password, timeout=30)
+    except Exception:
+        audit('service.' + body.action, aid + ':' + body.unit, 'failed')
+        raise
+    audit('service.' + body.action, aid + ':' + body.unit)
+    return {'ok': True, 'unit': body.unit, 'action': body.action}
+
+
+@app.get('/api/assets/{aid}/services/{unit}/logs')
+def systemd_service_logs(aid: str, unit: str, x_ssh_password: str | None = Header(default=None),
+                         _=Depends(require_auth)):
+    if not SERVICE_UNIT_RE.fullmatch(unit):
+        raise HTTPException(422, 'Invalid systemd service unit')
+    output = systemd_command(
+        aid, 'journalctl --no-pager --lines=100 --output=short-iso --unit ' + shlex.quote(unit),
+        x_ssh_password)
+    audit('service.logs', aid + ':' + unit)
+    return {'unit': unit, 'lines': output[-256*1024:]}
+
+
 # Operations release v0.3: commands are explicit administrator-approved remote actions.
 # Commands and descriptions are persisted; stdout/stderr and interactive passwords are NOT.
 class RunbookModel(BaseModel):
