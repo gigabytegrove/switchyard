@@ -62,3 +62,13 @@ def test_async_startup_does_not_serialize_independent_inventory_requests():
     assert "const [assets,info] = await Promise.all([api('/assets')" in JS
     assert 'void refreshDesktopGateway().catch(showError)' in JS
     assert 'setTimeout(renderMachineSwitcher, 110)' in JS
+
+
+def test_navigation_never_calls_for_each_on_a_single_dom_node():
+    # A replaced '$$' becomes '$' in JavaScript String.replace when the
+    # replacement is not a callback. One such occurrence aborted bind()
+    # before any workspace actions had listeners; this is a release blocker.
+    bad = re.findall(r'(?<!\$)\$\(([^)]{1,100})\)\.forEach\b', JS)
+    assert not bad, f'querySelector returns a single node: {bad}'
+    assert "$$('[data-page]').forEach" in JS
+    assert "$$('.page').forEach" in JS
