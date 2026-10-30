@@ -513,7 +513,7 @@ def test_sftp_editor_conflict_saves_atomically_and_cleans_temp(client, monkeypat
         def __exit__(self,*args):return False
         def stat(self,path): return Info(path)
         def file(self,path,mode):
-            if mode=='x':
+            if mode=='wx':
                 assert path not in contents
                 contents[path]=b''
                 modes[path]=0o600
