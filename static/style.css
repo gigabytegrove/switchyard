@@ -467,7 +467,11 @@ dialog.editor-dialog .command-input{min-height:240px;height:48dvh}
   #shell .machine-masthead-actions {gap:3px;flex:0 0 auto}
   #shell .machine-masthead-actions>button {padding:3px 5px;font-size:10px}
   #shell #machineTreeToggle {font-size:10px}
-  #shell.session-focus .workbench-command-bar {min-height:36px;height:36px}
+  #shell.session-focus .workbench-command-bar {min-height:36px;height:36px;gap:3px;justify-content:space-between}
+  #shell.session-focus .workbench-machine-identity {display:none}
+  #shell.session-focus .workbench-back {flex:none}
+  #shell.session-focus .machine-masthead-actions {flex:1;min-width:0;justify-content:space-between}
+  #shell.session-focus .machine-masthead-actions>button {font-size:10px;padding:2px 5px}
 }
 @media(max-width:390px) {
   #shell .station-name strong {font-size:14px}
