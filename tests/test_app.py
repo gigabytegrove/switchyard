@@ -595,6 +595,7 @@ def test_previous_release_schema_upgrade_preserves_existing_asset(client):
 
 def test_ssh_inventory_export_import_redaction_and_transaction(client):
     authenticate(client)
+    client.headers.update({'Origin': 'http://testserver'})
     folder = client.post('/api/folders', json={'name': 'Migration group', 'parent_id': None})
     assert folder.status_code == 201, folder.text
     source = asset('Portable host')
@@ -629,6 +630,7 @@ def test_ssh_inventory_export_import_redaction_and_transaction(client):
 
 def test_ssh_inventory_rejects_folder_cycles_and_missing_references(client):
     authenticate(client)
+    client.headers.update({'Origin': 'http://testserver'})
     inventory = {'format': 'switchyard-ssh-v1',
                  'folders': [{'id': 'a', 'name': 'One', 'parent_id': 'b'},
                              {'id': 'b', 'name': 'Two', 'parent_id': 'a'}],
@@ -647,6 +649,7 @@ def test_sftp_copy_chmod_rejects_overwrite_symlinks_and_invalid_mode(client, mon
     from types import SimpleNamespace
 
     authenticate(client)
+    client.headers.update({'Origin': 'http://testserver'})
     response = client.post('/api/assets', json=asset())
     assert response.status_code == 201, response.text
     aid = response.json()['id']
