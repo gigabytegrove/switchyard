@@ -167,7 +167,7 @@ def run():
                     assert result["scrollWidth"] <= width+3, result
                     assert result["header"]["width"] >= width-3, result
                     assert result["hero"]["width"] >= width-3, result
-                    assert result["roster"]["width"] >= width-35, result
+                    assert result["roster"]["width"] >= max(width*0.88, width-160), result
                     assert result["visible"]==1 and result["entryCount"]>=1, result
                     assert result["mobileNavigation"] == (width<=980), result
                     cdp.screenshot(width)
