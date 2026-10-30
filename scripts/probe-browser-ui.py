@@ -91,7 +91,7 @@ def run():
                                    stderr=subprocess.DEVNULL)
         try:
             endpoint = Path(profile) / "DevToolsActivePort"
-            deadline = time.monotonic() + 12
+            deadline = time.monotonic() + 35
             while not endpoint.exists() and time.monotonic() < deadline:
                 if process.poll() is not None:
                     raise RuntimeError("Headless browser exited before CDP startup")
