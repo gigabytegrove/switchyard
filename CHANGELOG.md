@@ -2,6 +2,8 @@
 
 - Add portable, password-free SSH machine and nested-folder JSON import/export with strict validation, conflict rejection and atomic SQLite commits.
 - Add dedicated connection workspace import/export controls and transaction/secret-redaction regression tests.
+- Expand SFTP with remote regular-file copy, no-overwrite, mode preservation, chmod, move-path controls, symlink/permission listing, and multi-file uploads with failure reporting.
+- Add API safety regressions for copy, chmod, symlinks, and duplicate targets.
 
 ## 0.5.3-dev.6 — interactive first-use SSH host trust
 

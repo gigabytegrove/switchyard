@@ -638,3 +638,77 @@ def test_ssh_inventory_rejects_folder_cycles_and_missing_references(client):
     inventory['assets'] = [{**asset(), 'folder_id': 'missing'}]
     assert client.post('/api/assets/import', json=inventory).status_code == 422
     assert client.get('/api/folders').json() == []
+
+
+
+def test_sftp_copy_chmod_rejects_overwrite_symlinks_and_invalid_mode(client, monkeypatch):
+    import io
+    import stat
+    from types import SimpleNamespace
+
+    authenticate(client)
+    response = client.post('/api/assets', json=asset())
+    assert response.status_code == 201, response.text
+    aid = response.json()['id']
+    contents = {'/source.txt': b'important remote content'}
+    modes = {'/source.txt': stat.S_IFREG | 0o640}
+    removed = []
+
+    class WriteFile(io.BytesIO):
+        def __init__(self, path):
+            super().__init__()
+            self.path = path
+        def close(self):
+            if not self.closed:
+                contents[self.path] = self.getvalue()
+                modes[self.path] = stat.S_IFREG | 0o600
+            super().close()
+
+    class FakeSFTP:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def lstat(self, path):
+            if path not in contents:
+                raise FileNotFoundError(path)
+            return SimpleNamespace(st_mode=modes[path], st_size=len(contents[path]))
+        def file(self, path, mode):
+            if mode == 'rb':
+                return io.BytesIO(contents[path])
+            assert mode == 'wx'
+            if path in contents:
+                raise FileExistsError(path)
+            return WriteFile(path)
+        def chmod(self, path, mode):
+            assert path in contents
+            modes[path] = stat.S_IFREG | mode
+        def remove(self, path):
+            removed.append(path)
+            contents.pop(path)
+
+    class FakeSSH:
+        def open_sftp(self): return FakeSFTP()
+        def close(self): pass
+
+    monkeypatch.setattr(m, 'ssh_client', lambda *_args, **_kw: FakeSSH())
+    copied = client.post(f'/api/assets/{aid}/files/copy',
+                         json={'source': '/source.txt', 'destination': '/copy.txt'})
+    assert copied.status_code == 200, copied.text
+    assert copied.json()['bytes_copied'] == len(contents['/source.txt'])
+    assert contents['/copy.txt'] == contents['/source.txt']
+    assert stat.S_IMODE(modes['/copy.txt']) == 0o640
+    assert client.post(f'/api/assets/{aid}/files/copy',
+                       json={'source': '/source.txt', 'destination': '/copy.txt'}).status_code == 409
+    assert client.post(f'/api/assets/{aid}/files/copy',
+                       json={'source': '/source.txt', 'destination': '/./source.txt'}).status_code == 422
+    contents['/link'] = b''
+    modes['/link'] = stat.S_IFLNK | 0o777
+    assert client.post(f'/api/assets/{aid}/files/copy',
+                       json={'source': '/link', 'destination': '/other'}).status_code == 422
+    assert client.post(f'/api/assets/{aid}/files/chmod',
+                       json={'path': '/link', 'mode': '600'}).status_code == 422
+    assert client.post(f'/api/assets/{aid}/files/chmod',
+                       json={'path': '/copy.txt', 'mode': '600'}).status_code == 200
+    assert stat.S_IMODE(modes['/copy.txt']) == 0o600
+    assert client.post(f'/api/assets/{aid}/files/chmod',
+                       json={'path': '/copy.txt', 'mode': '4755'}).status_code == 422
+    assert not removed

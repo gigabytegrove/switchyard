@@ -949,6 +949,44 @@ async function importSSHInventory(event) {
     toast('Imported '+result.assets_created+' machines and '+result.folders_created+' folders. Reconfigure credentials where required.');
   }finally{input.value='';}
 }
+
+function fileMessage(message,error=false){
+  const target=$('#fileTransferStatus');
+  target.textContent=message;
+  target.setAttribute('data-state',error?'error':'ready');
+}
+async function copyRemote(a,path){
+  const destination=await askDialog({title:'Copy remote file',
+    description:'Copy a regular file on '+a.host+'. Existing destinations are protected.',
+    label:'Full destination path',value:path+'.copy',required:true,action:'Copy file'});
+  if(destination===null)return;
+  const headers=await fileAuth(a);if(headers===null)return;
+  const result=await api('/assets/'+a.id+'/files/copy',
+    {method:'POST',body:{source:path,destination},headers});
+  fileMessage('Copied '+sizeLabel(result.bytes_copied)+' to '+destination);
+  toast('Remote file copied.');await browseFiles();
+}
+async function moveRemote(a,path){
+  const destination=await askDialog({title:'Move remote item',
+    description:'Move or rename on '+a.host+'. Existing destinations are protected.',
+    label:'Full destination path',value:path,required:true,action:'Move item'});
+  if(destination===null || destination===path)return;
+  const headers=await fileAuth(a);if(headers===null)return;
+  await api('/assets/'+a.id+'/files/rename',
+    {method:'POST',body:{source:path,destination},headers});
+  fileMessage('Moved '+path+' to '+destination);
+  toast('Remote item moved.');await browseFiles();
+}
+async function chmodRemote(a,path,existing){
+  const mode=await askDialog({title:'Set remote permissions',
+    description:'Unix access bits for '+path+' (three octal digits such as 640 or 755).',
+    label:'Permissions (octal)',value:existing==='---'?'644':existing,required:true,action:'Set permissions'});
+  if(mode===null)return;
+  if(!/^[0-7]{3}$/.test(mode)){toast('Enter exactly three octal digits, such as 644.',true);return;}
+  const headers=await fileAuth(a);if(headers===null)return;
+  await api('/assets/'+a.id+'/files/chmod',{method:'POST',body:{path,mode},headers});
+  toast('Permissions updated to '+mode+'.');await browseFiles();
+}
 function renderFileSelect() {
   const select = $('#fileAsset'); const selected = select.value; select.replaceChildren(node('option', '', 'Select an asset'));
   for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; select.append(opt); }
@@ -970,12 +1008,18 @@ async function browseFiles() {
   if (!data.entries.length) target.append(node('div', 'empty-state', 'This directory is empty.'));
   for (const entry of data.entries) {
     const row = node('div', 'file-row'); const fullPath = (data.path === '/' ? '' : data.path) + '/' + entry.name;
-    const name = button((entry.directory ? '▣ ' : '▤ ') + entry.name, 'file-name', () => { if (entry.directory) { $('#filePath').value = fullPath; browseFiles(); } else downloadFile(a, fullPath); });
+    const name = button((entry.directory ? '▣ ' : entry.symlink ? '↪ ' : '▤ ') + entry.name, 'file-name', () => { if (entry.directory) { $('#filePath').value = fullPath; browseFiles(); } else downloadFile(a, fullPath); });
     const tools = node('div', 'file-tools');
     tools.append(node('span', 'file-size', entry.directory ? 'DIR' : sizeLabel(entry.size)),
-      ...(entry.directory ? [] : [button('Edit text', 'mini-btn', () => openFileEditor(a, fullPath))]),
-      button('Rename', 'mini-btn', () => renameRemote(a, fullPath)),
-      button('Delete', 'mini-btn danger', () => deleteRemote(a, fullPath, entry.directory)));
+      node('span', 'file-size mono', entry.permissions || '---'),
+      ...(!entry.directory && !entry.symlink ? [
+        button('Edit text', 'mini-btn', () => openFileEditor(a, fullPath).catch(showError)),
+        button('Copy', 'mini-btn', () => copyRemote(a, fullPath).catch(showError))] : []),
+      button('Move', 'mini-btn', () => moveRemote(a, fullPath).catch(showError)),
+      ...(!entry.symlink ? [button('Permissions', 'mini-btn',
+        () => chmodRemote(a, fullPath, entry.permissions).catch(showError))] : []),
+      button('Rename', 'mini-btn', () => renameRemote(a, fullPath).catch(showError)),
+      button('Delete', 'mini-btn danger', () => deleteRemote(a, fullPath, entry.directory).catch(showError)));
     row.append(name, tools, node('span', 'file-size', new Date(entry.modified * 1000).toLocaleString())); target.append(row);
   }
 }
@@ -988,14 +1032,39 @@ async function downloadFile(a, path) {
   toast('File download started.');
 }
 async function uploadFile(event) {
-  const a = state.assets.find(x => x.id === $('#fileAsset').value);
-  if (!a) { toast('Select a remote host first.', true); return; }
-  const file = event.target.files?.[0]; if (!file) return;
-  if (file.size > 64 * 1024 * 1024) { toast('File exceeds 64 MiB limit.', true); return; }
-  const headers = await fileAuth(a); if (headers === null) return;
-  const body = new FormData(); body.set('file', file);
-  await api(`/assets/${a.id}/upload?path=${encodeURIComponent($('#filePath').value || '.')}`, { method: 'POST', body, headers });
-  event.target.value = ''; toast('File uploaded; no existing remote file was overwritten.'); await browseFiles();
+  const input=event.target, files=[...(input.files||[])];
+  if(!files.length)return;
+  const a=state.assets.find(x=>x.id===$('#fileAsset').value);
+  if(!a){input.value='';toast('Select a remote host first.',true);return;}
+  if(files.length>20){input.value='';toast('Choose up to 20 files per batch.',true);return;}
+  const oversized=files.find(file=>file.size>64*1024*1024);
+  if(oversized){input.value='';toast('File exceeds 64 MiB: '+oversized.name,true);return;}
+  const headers=await fileAuth(a);if(headers===null){input.value='';return;}
+  const trigger=$('#fileUploadButton');trigger.disabled=true;
+  let uploaded=0;const failed=[];
+  try{
+    for(let i=0;i<files.length;i++){
+      const file=files[i];
+      fileMessage('Uploading '+(i+1)+' of '+files.length+': '+file.name);
+      const body=new FormData();body.set('file',file);
+      try{
+        await api('/assets/'+a.id+'/upload?path='+encodeURIComponent($('#filePath').value||'.'),
+          {method:'POST',body,headers});
+        uploaded++;
+      }catch(error){
+        failed.push(file.name+': '+error.message);
+        if(error.message.startsWith('SSH authentication rejected'))break;
+      }
+    }
+    if(failed.length){
+      fileMessage(uploaded+' uploaded. Failed: '+failed.join(' | '),true);
+      toast('Some uploads failed. Review transfer status.',true);
+    }else{
+      fileMessage('Uploaded '+uploaded+' file'+(uploaded===1?'':'s')+' without overwriting remote files.');
+      toast('Batch upload complete.');
+    }
+    await browseFiles();
+  }finally{input.value='';trigger.disabled=false;}
 }
 async function createRemoteFolder() {
   const a = state.assets.find(x => x.id === $('#fileAsset').value);

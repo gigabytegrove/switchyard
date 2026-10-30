@@ -128,6 +128,10 @@ The machine-specific workspace rules are in `static/workspace.css`, loaded after
 
 **Connections → Export SSH** downloads a credential-free JSON inventory containing machine profiles and nested folders. **Import SSH** validates all records, rejects secret-bearing fields and folder cycles, refuses collisions with existing machines or folders, and commits atomically. Existing records are never overwritten. Credentials, private keys, encrypted passwords, TOTP secrets and Vaultwarden session state are not included; reconfigure missing credentials on the destination system.
 
+## Expanded SFTP operations
+
+The **Files** workspace can select up to 20 files for sequential batch upload (64 MiB maximum per file), copy regular files on the same SSH server without overwriting the destination, move/rename entries by full destination path, edit three-digit Unix permissions, and display symlinks and permissions. Copy uses bounded SFTP chunks and removes incomplete destination files on failure. Recursive directory copy, symlink copy, large transfers and remote folder ZIP downloads are not yet supported.
+
 ## Reverse proxy and MFA
 
 1. Optional: from the trusted LAN URL, sign in and enroll an authenticator under **Settings → Two-factor authentication**. Enter your administrator password, scan or copy the presented authenticator secret, then confirm with the current six-digit code.

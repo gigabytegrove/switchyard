@@ -384,3 +384,10 @@ button:disabled {cursor:not-allowed;opacity:.5}
 .ssh-trust-caution code{overflow-wrap:anywhere;font-size:11px}
 .ssh-trust-dialog button:focus-visible{outline:3px solid #b72237;outline-offset:3px}
 @media(max-width:520px){.ssh-trust-dialog .modal-actions{display:grid;grid-template-columns:1fr}.ssh-trust-dialog .modal-actions button{width:100%}}
+
+/* Remote file actions wrap without clipping path labels or hiding focus. */
+#page-files .file-row{grid-template-columns:minmax(160px,1fr) minmax(260px,auto) minmax(100px,165px)}
+#page-files .file-tools{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:6px;min-width:0}
+#page-files .file-tools .mini-btn{white-space:nowrap}
+#fileTransferStatus[data-state="error"]{color:#A51E32;font-weight:700}
+@media(max-width:800px){#page-files .file-row{grid-template-columns:minmax(0,1fr)}#page-files .file-row>:last-child{display:block;font-size:11px}}
