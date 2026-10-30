@@ -122,10 +122,30 @@ def run():
                 })()""")
                 started = time.monotonic()
                 cdp.until("""!!document.querySelector('#shell:not(.hidden)') &&
-                  !!document.querySelector('#page-machine:not(.hidden)') &&
-                  document.querySelector('#machineSwitcher').children.length > 0""",
-                          "authenticated machine workbench")
-                print(f"PASS: login -> usable operations desk in {time.monotonic()-started:.2f}s",flush=True)
+                  !!document.querySelector('#page-machines:not(.hidden)') &&
+                  document.getElementById('machineDirectory').textContent.length>0""",
+                          "Station 02 directory home")
+                print(f"PASS: login -> Station 02 machine directory in {time.monotonic()-started:.2f}s",flush=True)
+
+                # Seed a disposable, reserved-address machine through the real
+                # authenticated API. Never attempt a connection to that address.
+                record = cdp.eval("""(async function(){
+                    const created=await api('/assets',{method:'POST',body:{
+                      label:'QA relay station',host:'192.0.2.48',port:22,
+                      username:'operator',environment:'Lab',
+                      auth_type:'interactive',credential_ref:'',key_file:'',
+                      use_tmux:true,note:'CI-only demo record'
+                    }});
+                    await refreshAssets();
+                    return {id:created.id,rows:document.querySelectorAll('.machine-entry').length};
+                })()""")
+                assert record["id"] and record["rows"] >= 1, record
+                assert cdp.eval("""(function(){
+                  return getComputedStyle(document.querySelector('.station-header')).backgroundColor==='rgb(32, 58, 48)' &&
+                    getComputedStyle(document.querySelector('.directory-hero')).backgroundColor==='rgb(37, 72, 58)' &&
+                    document.getElementById('stationVersion').textContent.includes('0.5.6-dev.1') &&
+                    !document.querySelector('.sidebar');
+                })()"""), "not the unique Station 02 UI (wrong image, CSS or cached shell)"
 
                 for width in (1440, 1024, 840, 620, 360):
                     cdp.call("Emulation.setDeviceMetricsOverride", width=width,
@@ -134,66 +154,78 @@ def run():
                       const $=s=>document.querySelector(s);
                       const bounds=el=>{const r=el.getBoundingClientRect();
                         return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
-                      const stage=bounds($('.workbench-stage'));
-                      const area=bounds($('.machine-work-area'));
-                      const shell=bounds($('#shell'));
-                      const machine=bounds($('#page-machine'));
-                      const menu=$('#machineCommandMenu');
-                      menu.open=true;
-                      const detailVisible=getComputedStyle($('#machineInfoToggle')).display!=='none';
-                      menu.open=false;
                       return {
                         viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,
-                        stage,area,shell,machine,detailVisible,
-                        mobileNavigation:getComputedStyle($('#navMobileToggle')).display!=='none',
-                        activeRoutes:document.querySelectorAll('.page:not(.hidden)').length
+                        header:bounds($('.station-header')),hero:bounds($('.directory-hero')),
+                        roster:bounds($('#machineDirectory')),
+                        visible:document.querySelectorAll('.page:not(.hidden)').length,
+                        entryCount:document.querySelectorAll('.machine-entry').length,
+                        mobileNavigation:getComputedStyle($('#navMobileToggle')).display!=='none'
                       };
                     })()""")
-                    assert result["viewport"] == width, result
-                    assert result["scrollWidth"] <= width + 3, result
-                    assert result["stage"]["width"] >= min(width-40, 250), result
-                    assert result["stage"]["height"] >= 350, result
-                    assert result["area"]["x"] >= -1 and result["area"]["right"] <= width+2, result
-                    assert result["machine"]["height"] >= 600, result
-                    assert result["detailVisible"], result
-                    assert result["activeRoutes"] == 1, result
-                    assert result["mobileNavigation"] == (width <= 840), result
+                    assert result["viewport"]==width, result
+                    assert result["scrollWidth"] <= width+3, result
+                    assert result["header"]["width"] >= width-3, result
+                    assert result["hero"]["width"] >= width-3, result
+                    assert result["roster"]["width"] >= width-35, result
+                    assert result["visible"]==1 and result["entryCount"]>=1, result
+                    assert result["mobileNavigation"] == (width<=980), result
                     cdp.screenshot(width)
-                    print(f"PASS: viewport {width}px, work stage {result['stage']['width']:.0f}x{result['stage']['height']:.0f}",flush=True)
+                    print(f"PASS Station 02 roster at {width}px ({result['entryCount']} machines)",flush=True)
 
                 cdp.call("Emulation.setDeviceMetricsOverride",
                          width=360,height=900,deviceScaleFactor=1,mobile=False)
-                menu_state = cdp.eval("""(function(){
+                drawer = cdp.eval("""(function(){
                   const nav=document.getElementById('navMobileToggle');
                   const shell=document.getElementById('shell');
-                  const dismiss=document.getElementById('navDismiss');
-                  const css=getComputedStyle(nav).display;
-                  const before={shell:shell.className,expanded:nav.getAttribute('aria-expanded')};
                   nav.click();
-                  const afterOpen={shell:shell.className,expanded:nav.getAttribute('aria-expanded')};
-                  dismiss.click();
-                  const afterClose={shell:shell.className,expanded:nav.getAttribute('aria-expanded')};
-                  return {css,before,afterOpen,afterClose};
+                  const open=shell.classList.contains('nav-open') &&
+                    nav.getAttribute('aria-expanded')==='true';
+                  document.getElementById('navDismiss').click();
+                  return open && !shell.classList.contains('nav-open') &&
+                    nav.getAttribute('aria-expanded')==='false';
                 })()""")
-                assert (
-                    "nav-open" in menu_state["afterOpen"]["shell"].split()
-                    and menu_state["afterOpen"]["expanded"] == "true"
-                    and "nav-open" not in menu_state["afterClose"]["shell"].split()
-                    and menu_state["afterClose"]["expanded"] == "false"
-                ), f"mobile navigation drawer cannot open/close: {menu_state}"
+                assert drawer, "mobile navigation drawer cannot open/close"
 
-                assert cdp.eval("""(function(){
+                find = cdp.eval("""(function(){
                   document.getElementById('globalFind').click();
-                  return document.activeElement.id==='machineSwitchSearch' &&
-                    document.getElementById('machineLayout').classList.contains('tree-open');
-                })()"""), "global search did not open and focus mobile machine rack"
+                  return document.activeElement.id==='machineSearch' &&
+                    !!document.querySelector('#page-machines:not(.hidden)');
+                })()""")
+                assert find, "global machine search should focus roster input"
+
+                # A machine opens an independent canvas, not a permanent
+                # two-column tree layout. All protocols remain available.
                 assert cdp.eval("""(function(){
-                  window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
-                  return !document.getElementById('machineLayout').classList.contains('tree-open');
-                })()"""), "Escape did not close machine rack"
+                  document.querySelector('.machine-entry-open').click();
+                  return !!document.querySelector('#page-machine:not(.hidden)') &&
+                    !!document.querySelector('#page-machines.hidden') &&
+                    document.querySelector('.machine-layout').children.length===3 &&
+                    !document.querySelector('.sidebar');
+                })()"""), "machine roster cannot open independent workbench"
+                result = cdp.eval("""(function(){
+                  const stage=document.querySelector('.workbench-stage').getBoundingClientRect();
+                  const layout=document.querySelector('.machine-layout').getBoundingClientRect();
+                  return {stageWidth:stage.width,layoutWidth:layout.width,
+                    stageHeight:stage.height};
+                })()""")
+                assert abs(result["stageWidth"]-result["layoutWidth"])<=4, result
+                assert result["stageHeight"]>=340, result
+                assert cdp.eval("""(function(){
+                  const toggle=document.getElementById('machineTreeToggle');
+                  toggle.click();
+                  const opened=document.getElementById('machineLayout').classList.contains('tree-open');
+                  document.getElementById('treeClose').click();
+                  return opened && !document.getElementById('machineLayout').classList.contains('tree-open');
+                })()"""), "on-demand machine switcher does not open/close"
+                assert cdp.eval("""(function(){
+                  document.getElementById('machineBackToDirectory').click();
+                  return !!document.querySelector('#page-machines:not(.hidden)');
+                })()"""), "back to machine directory did not restore home"
+                cdp.screenshot("360-directory-after-workbench")
                 assert not cdp.uncaught, f"Uncaught browser exceptions: {cdp.uncaught}"
-                print("PASS: live browser at 1440/1024/840/620/360, drawer, search, "
-                      "focus and uncaught-exception checks",flush=True)
+                print("PASS: Station 02 actual Chrome CSS colors, roster -> full workbench -> roster, "
+                      "horizontal nav, mobile drawer, quick search, no uncaught errors",flush=True)
         finally:
             process.terminate()
             try:
