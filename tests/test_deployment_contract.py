@@ -44,5 +44,5 @@ def test_release_version_consistency():
     version = (ROOT / 'VERSION').read_text().strip()
     assert version == '0.5.7-dev.1'
     assert 'switchyard:0.5.7-dev.1' in (ROOT / 'compose.yaml').read_text()
-    assert 'version-0.5.6--dev.1' in (ROOT / 'README.md').read_text()
+    assert 'version-0.5.7--dev.1' in (ROOT / 'README.md').read_text()
     assert '## 0.5.7-dev.1' in (ROOT / 'CHANGELOG.md').read_text()
