@@ -124,6 +124,10 @@ The machine-specific workspace rules are in `static/workspace.css`, loaded after
 | Security | SSH host-key trust, optional TOTP for HTTPS proxy, session controls, CSRF origin verification, activity journal |
 | Backups | Consistent database snapshot, host trust, and TOTP recovery key with SHA-256 manifest (sensitive backup) |
 
+## SSH connection diagnostics
+
+A machine's **Check SSH port** and the Connections asset directory's **Check first 20 SSH ports** actions probe TCP reachability without credentials or modifying host trust. Batch checks use up to four concurrent probes, each bounded to four seconds. A reachable TCP port is not proof of SSH host identity or successful authentication.
+
 ## SSH inventory migration
 
 **Connections → Export SSH** downloads a credential-free JSON inventory containing machine profiles and nested folders. **Import SSH** validates all records, rejects secret-bearing fields and folder cycles, refuses collisions with existing machines or folders, and commits atomically. Existing records are never overwritten. Credentials, private keys, encrypted passwords, TOTP secrets and Vaultwarden session state are not included; reconfigure missing credentials on the destination system.

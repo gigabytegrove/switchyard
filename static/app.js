@@ -9,6 +9,7 @@ let editingRunbookId = null;
 let runbooks = [];
 let auditBefore = null;
 let auditFilter = '';
+const sshProbeResults = new Map();
 
 function toast(message, error = false) {
   const el = $('#toast'); el.textContent = message; el.className = error ? 'show error' : 'show';
@@ -532,6 +533,8 @@ function updateMachineHeader(){
   $('#machineEdit').disabled=!a;$('#machineAddDesktop').disabled=!state.machineHost;
   $('#machineInfoToggle').disabled=!state.machineHost;
   $('#machineTrust').disabled=!a;
+  $('#machineProbe').disabled=!a;
+  if(a && sshProbeResults.has(a.id))$('#machineAvailability').textContent=' · '+sshProbeLabel(sshProbeResults.get(a.id));
   renderMachineSwitcher();
   if(!$('#machineInfoDrawer').classList.contains('hidden'))renderMachineInfo();
 }
@@ -669,6 +672,34 @@ function renderQuick() {
     target.append(el);
   }
 }
+
+function sshProbeLabel(result) {
+  return result.reachable ? 'TCP reachable · login not verified' : 'TCP unreachable · check host, port, or firewall';
+}
+async function checkSSHPort(a) {
+  if(!a)throw Error('Choose an SSH machine first.');
+  const result=await api('/assets/'+a.id+'/probe',{method:'POST'});
+  sshProbeResults.set(a.id,result);
+  renderAssets();
+  if(normalizedHost(a.host)===state.machineHost)updateMachineHeader();
+  toast(a.label+': '+sshProbeLabel(result),!result.reachable);
+  return result;
+}
+async function checkSSHBatch() {
+  const query=$('#assetSearch').value.trim().toLowerCase();
+  const selected=state.assets.filter(a=>(a.label+' '+a.host+' '+a.username+' '+a.environment).toLowerCase().includes(query)).slice(0,20);
+  if(!selected.length){toast('No SSH machines to check.',true);return;}
+  const trigger=$('#sshProbeBatch');trigger.disabled=true;
+  $('#sshProbeStatus').textContent='Checking '+selected.length+' SSH TCP ports…';
+  try {
+    const data=await api('/assets/probes',{method:'POST',body:{ids:selected.map(a=>a.id)}});
+    for(const result of data.results)sshProbeResults.set(result.id,result);
+    const count=data.results.filter(r=>r.reachable).length;
+    $('#sshProbeStatus').textContent=count+' of '+data.count+' TCP ports reachable; host identity and SSH login not verified.';
+    renderAssets();updateMachineHeader();
+  } finally {trigger.disabled=false;}
+}
+
 function renderAssets() {
   const query = $('#assetSearch').value.toLowerCase().trim();
   const assets = state.assets.filter(a => (a.label + ' ' + a.host + ' ' + a.username + ' ' + a.environment).toLowerCase().includes(query));
@@ -681,7 +712,9 @@ function renderAssets() {
     const host = node('div', 'host-column mono', a.host + ':' + a.port);
     const env = node('div', 'environment-column env-tag', a.environment || '—');
     const actions = node('div', 'asset-row-actions');
-    actions.append(button('Connect ↗', 'mini-btn', () => connect(a.id)), button('Files', 'mini-btn', () => { navigate('files'); $('#fileAsset').value = a.id; browseFiles(); }), button('Edit', 'mini-btn', () => openAsset(a)), button('Delete', 'mini-btn danger', () => removeAsset(a)));
+    actions.append(button('Connect ↗', 'mini-btn', () => connect(a.id)), button('Check port', 'mini-btn', () => checkSSHPort(a).catch(showError)), button('Files', 'mini-btn', () => { navigate('files'); $('#fileAsset').value = a.id; browseFiles(); }), button('Edit', 'mini-btn', () => openAsset(a)), button('Delete', 'mini-btn danger', () => removeAsset(a)));
+    const check=sshProbeResults.get(a.id);
+    if(check)name.append(node('small',check.reachable?'status-good':'status-bad',sshProbeLabel(check)));
     row.append(name, host, env, actions); target.append(row);
   }
 }
@@ -1992,6 +2025,8 @@ function bind() {
   $('#logoutBtn').addEventListener('click', safeAsync(async () => { await api('/logout', { method: 'POST' }); setLogin(); }));
   $('#assetAuth').addEventListener('change', syncAuthFields);
   $('#assetSearch').addEventListener('input', renderAssets);
+  $('#sshProbeBatch').addEventListener('click',safeAsync(checkSSHBatch));
+  $('#machineProbe').addEventListener('click',safeAsync(()=>checkSSHPort(machineAsset())));
   $('#sshExport').addEventListener('click', safeAsync(exportSSHInventory));
   $('#sshImport').addEventListener('click', () => $('#sshImportFile').click());
   $('#sshImportFile').addEventListener('change', safeAsync(importSSHInventory));

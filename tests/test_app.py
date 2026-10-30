@@ -715,3 +715,38 @@ def test_sftp_copy_chmod_rejects_overwrite_symlinks_and_invalid_mode(client, mon
     assert client.post(f'/api/assets/{aid}/files/chmod',
                        json={'path': '/copy.txt', 'mode': '4755'}).status_code == 422
     assert not removed
+
+
+def test_ssh_tcp_probe_uses_no_credentials_and_bounds_batch(client, monkeypatch):
+    import asyncio
+    import uuid
+    authenticate(client)
+    client.headers.update({'Origin': 'http://testserver'})
+    machine_ids = []
+    for i in range(2):
+        item = asset('Diagnostic ' + str(i))
+        item['host'] = '192.168.20.' + str(10 + i)
+        response = client.post('/api/assets', json=item)
+        assert response.status_code == 201, response.text
+        machine_ids.append(response.json()['id'])
+
+    seen = []
+    async def fake_probe(host, port):
+        seen.append((host, port))
+        await asyncio.sleep(0)
+        return {'reachable': host.endswith('10'), 'elapsed_ms': 21,
+                'message': 'Remote TCP connection failed'}
+
+    monkeypatch.setattr(m, 'probe', fake_probe)
+    check = client.post('/api/assets/' + machine_ids[0] + '/probe')
+    assert check.status_code == 200, check.text
+    assert check.json()['reachable'] is True
+    assert 'authentication not tested' in check.json()['message']
+    batch = client.post('/api/assets/probes', json={'ids': machine_ids})
+    assert batch.status_code == 200, batch.text
+    assert batch.json()['count'] == 2
+    assert [row['reachable'] for row in batch.json()['results']] == [True, False]
+    assert client.post('/api/assets/probes', json={'ids': machine_ids * 2}).status_code == 422
+    assert client.post('/api/assets/probes', json={'ids': ['invalid-id']}).status_code == 422
+    assert client.post('/api/assets/probes', json={'ids': [str(uuid.uuid4())]}).status_code == 404
+    assert client.post('/api/assets/probes', json={'ids': machine_ids * 11}).status_code == 422

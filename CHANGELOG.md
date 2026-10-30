@@ -1,5 +1,6 @@
 ## 0.5.4-dev.1 (2026-10-30)
 
+- Add single-machine and bounded batch TCP port diagnostics, with explicit non-authentication status in the machine header and asset list.
 - Add portable, password-free SSH machine and nested-folder JSON import/export with strict validation, conflict rejection and atomic SQLite commits.
 - Add dedicated connection workspace import/export controls and transaction/secret-redaction regression tests.
 - Expand SFTP with remote regular-file copy, no-overwrite, mode preservation, chmod, move-path controls, symlink/permission listing, and multi-file uploads with failure reporting.
