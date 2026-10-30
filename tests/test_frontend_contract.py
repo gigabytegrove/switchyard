@@ -28,7 +28,9 @@ def test_all_static_js_id_references_resolve_and_unique():
     assert not parser.duplicates
     assert references <= parser.ids, f'Missing elements: {references - parser.ids}'
     pages = set(re.findall(r'data-page="([a-z]+)"', (ROOT / 'static/index.html').read_text()))
-    assert all(f'page-{page}' in parser.ids for page in pages)
+    # Machines is a route alias for the permanent two-pane workspace, not a landing page.
+    assert all(f'page-{"machine" if page == "machines" else page}' in parser.ids for page in pages)
+    assert 'page-machines' not in parser.ids
     for required in ('fileEditorDialog', 'healthMetrics', 'runbookHistory', 'runbookForm', 'dockerShowStacks'):
         assert required in parser.ids
 
