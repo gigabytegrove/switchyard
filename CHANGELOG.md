@@ -1,4 +1,4 @@
-# 0.5.4-dev.1 (2026-10-30)
+## 0.5.4-dev.1 (2026-10-30)
 
 - Add portable, password-free SSH machine and nested-folder JSON import/export with strict validation, conflict rejection and atomic SQLite commits.
 - Add dedicated connection workspace import/export controls and transaction/secret-redaction regression tests.
