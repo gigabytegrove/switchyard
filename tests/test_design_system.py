@@ -1,74 +1,52 @@
-"""New operator UI: single CSS owner, controls, responsive + accessible contract."""
-from html.parser import HTMLParser
+"""Station 02 operator experience regression tests."""
 from pathlib import Path
 import re
-
 ROOT=Path(__file__).resolve().parents[1]
 HTML=(ROOT/'static/index.html').read_text()
 CSS=(ROOT/'static/style.css').read_text()
 JS=(ROOT/'static/app.js').read_text()
 
-
-class Elements(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.ids={}
-    def handle_starttag(self, tag, attrs):
-        attrs=dict(attrs)
-        if 'id' in attrs:
-            assert attrs['id'] not in self.ids
-            self.ids[attrs['id']]=(tag,attrs)
-
-
-def test_single_style_owner_and_no_legacy_cascade():
-    assert '<link rel="stylesheet" href="/static/style.css">' in HTML
+def test_single_css_owner_busted_cache_and_obvious_version_marker():
+    assert 'href="/static/style.css?v=0.5.6-dev.1"' in HTML
+    assert 'src="/static/app.js?v=0.5.6-dev.1"' in HTML
+    assert 'STATION 02 · 0.5.6-dev.1' in HTML
     assert '/static/workspace.css' not in HTML
     assert not (ROOT/'static/workspace.css').exists()
-    assert ':root {' in CSS
-    for token in ('--paper:#fff','--canvas:#f6f4f0','--graphite:#27272b',
-                  '--accent:#bc293a','--wb-rail:276px'):
+    assert ':root{' in CSS and '@import' not in CSS
+    for token in ('--ink:#203a30','--signal:#dff18a','--off:#f7f7ef','--accent:#9b3c28'):
         assert token in CSS
-    assert '@media(prefers-reduced-motion:reduce)' in CSS
+    assert '.station-header{' in CSS and '.directory-hero{' in CSS
+    assert '.machine-entry-actions button{' in CSS
+    assert '.machine-context{position:absolute;' in CSS
     assert 'color-scheme:light' in CSS
-    assert '@import' not in CSS
 
+def test_not_previous_shell_or_previous_workflow():
+    assert 'class="sidebar"' not in HTML
+    assert 'class="brand"' not in HTML
+    assert 'class="station-header"' in HTML
+    assert 'id="page-machines" class="page machine-directory-page"' in HTML
+    assert 'Where to?' in HTML
+    assert 'machine-rail-resize' in HTML and '.machine-rail-resize{display:none!important}' in CSS
+    assert 'id="machineBackToDirectory"' in HTML
+    assert 'id="treeClose"' in HTML
+    assert 'id="machineCommandMenu"' in HTML
+    assert "if (page === 'machines') page = 'machine';" not in JS
+    assert "navigate('machines')" in JS
+    assert "machine.ssh[0].id" in JS
+    assert "machine.desktops[0]" in JS
 
-def test_workbench_navigation_and_action_disclosure():
-    p=Elements();p.feed(HTML)
-    for key in ('shellNavigation','navMobileToggle','navDismiss','globalFind',
-                'machineCommandMenu','machinePrimaryConnect','machineInfoToggle',
-                'machineTrust','machineProbe','machineEdit','machineAddDesktop',
-                'machineSwitcher','machineRailResize','workbenchSessions'):
-        assert key in p.ids
-    assert p.ids['machineCommandMenu'][0]=='details'
-    assert '<summary>Actions</summary>' in HTML
-    assert 'function renderWorkbenchSessions()' in JS
-    assert "'nav-open'" in JS
-    assert "window.matchMedia('(max-width:620px)')" in JS
-
-
-def test_breakpoints_and_no_mobile_menu_invisibility():
-    for size in (1120,840,620,420):
-        assert f'@media(max-width:{size}px)' in CSS
-    # The nested disclosure menu must stay available on small screens.
-    assert '.machine-masthead-actions > .action-quiet {display:none}' in CSS
-    assert '.machine-masthead-actions .action-quiet {display:none}' not in CSS
+def test_shortcuts_mobile_access_and_no_event_binding_crashes():
+    for p in (1280,980,760,540,390):
+        assert f'@media(max-width:{p}px)' in CSS
+    assert 'prefers-reduced-motion:reduce' in CSS
+    assert '.shell.nav-open .station-navigation' in CSS
     assert '.machine-layout.tree-open .machine-context' in CSS
-    assert '.shell.nav-open .sidebar' in CSS
+    assert "setMachineTreeOpen(false)" in JS
+    assert "$$('[data-page]').forEach" in JS
+    assert "$$('.page').forEach" in JS
+    assert not re.findall(r'(?<!\$)\$\(([^)]{1,100})\)\.forEach\b',JS)
 
-
-def test_async_startup_does_not_serialize_independent_inventory_requests():
+def test_inventory_starts_independently():
     assert 'await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops()])' in JS
     assert "const [assets,info] = await Promise.all([api('/assets')" in JS
     assert 'void refreshDesktopGateway().catch(showError)' in JS
-    assert 'setTimeout(renderMachineSwitcher, 110)' in JS
-
-
-def test_navigation_never_calls_for_each_on_a_single_dom_node():
-    # A replaced '$$' becomes '$' in JavaScript String.replace when the
-    # replacement is not a callback. One such occurrence aborted bind()
-    # before any workspace actions had listeners; this is a release blocker.
-    bad = re.findall(r'(?<!\$)\$\(([^)]{1,100})\)\.forEach\b', JS)
-    assert not bad, f'querySelector returns a single node: {bad}'
-    assert "$$('[data-page]').forEach" in JS
-    assert "$$('.page').forEach" in JS

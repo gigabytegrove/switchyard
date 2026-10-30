@@ -10,8 +10,9 @@ const css=fs.readFileSync(path.join(root,'static/style.css'),'utf8');
 for(const key of ['id="machineLayout"','id="machineRailResize"','id="machineTreeToggle"'])
   assert(html.includes(key),key+' must exist in the actual UI');
 assert(css.includes('.machine-layout.tree-open .machine-context'));
-assert(css.includes('grid-template-columns:minmax(196px,var(--wb-rail)) 7px minmax(0,1fr)'));
-assert(css.includes('@media(max-width:620px)'));
+assert(css.includes('.machine-rail-resize{display:none!important}'));
+assert(html.includes('id="treeClose"'));
+assert(css.includes('@media(max-width:540px)'));
 const start=source.indexOf('const TREE_FOLD_KEY');
 const end=source.indexOf('function renderMachineSwitcher()',start);
 assert(start>=0&&end>start,'Real rail/folder functions must be present');
@@ -28,7 +29,7 @@ function fake(){
   style:{setProperty:(k,v)=>styles.set(k,v)},attrs,styles
  };
 }
-const ids=new Map(['#machineLayout','#machineRailResize','#machineTreeToggle','#machineSwitchSearch','#machineSwitcher','#shell'].map(x=>[x,fake()]));
+const ids=new Map(['#machineLayout','#machineRailResize','#machineTreeToggle','#machineSwitchSearch','#machineSwitcher','#treeClose','#machineBackToDirectory','#shell'].map(x=>[x,fake()]));
 const windowHandlers=new Map();
 const context=vm.createContext({
  window:{localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},

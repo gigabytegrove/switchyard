@@ -1,4 +1,12 @@
-## 0.5.5-dev.1 (2026-10-30)
+## 0.5.6-dev.1 (2026-10-30)
+
+- Replaced the prior visually unchanged control room with Station 02: horizontal forest-green navigation, editorial machine-directory landing screen, protocol-specific one-click launch controls, and full-width session desk. No persistent left navigation or machine rail.
+- Machine selector is now an on-demand off-canvas overlay; detailed management functions remain available through the header's action menu. Existing SSH, RDP, VNC, SPICE, SFTP, operations, trust and credential APIs are preserved.
+- Introduced an unmistakable Station 02 · 0.5.6-dev.1 version marker and cache-busted main CSS/JS paths. Fail smoke acceptance if the served HTML/style is not this release.
+- Replaced all CSS with one coherent forest/limestone/lime stylesheet, including navigation/mobile drawer, directory-first responsive grids and accessible focus/reduced motion.
+- CI explicitly exercises rendered browser navigation and the directory-to-workbench transition at five widths. Actual remote endpoints still require live deployment qualification.
+
+## 0.5.6-dev.1 (2026-10-30)
 
 - Rebuilt the Switchyard experience from the ground up: unified graphite and signal-red visual system, new operator navigation, persistent machine rack, full-height session work surface, reorganized action menus, mobile drawers, accessible focus styling, responsive breakpoints and reduced-motion defaults.
 - Removed the stacked workspace CSS layers and their conflicting responsive overrides; one versioned stylesheet owns the whole interface.

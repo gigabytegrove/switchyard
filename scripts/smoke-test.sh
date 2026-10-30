@@ -27,11 +27,16 @@ grep -Fq "\"version\":\"$expected_version\"" "$TEMP/response" || {
 }
 check_http / 'Switchyard UI responds'
 grep -q 'SWITCHYARD' "$TEMP/response" || { echo 'FAIL: expected UI shell missing' >&2; exit 1; }
+grep -Fq 'STATION 02 · 0.5.6-dev.1' "$TEMP/response" || { echo 'FAIL: Station 02 interface not installed' >&2; exit 1; }
+grep -Fq 'style.css?v=0.5.6-dev.1' "$TEMP/response" || { echo 'FAIL: Station 02 CSS reference missing' >&2; exit 1; }
+echo 'PASS: served HTML identifies the new Station 02 interface'
 check_http /api/setup/status 'Setup status endpoint responds'
 check_http /static/guacamole.js 'Guacamole browser runtime is packaged'
 check_http /static/spice/main.js 'SPICE HTML5 browser runtime is packaged'
 check_http /static/spice-view.html 'SPICE viewer responds'
-check_http /static/style.css 'Unified operations desk stylesheet is packaged'
+check_http '/static/style.css?v=0.5.6-dev.1' 'Station 02 stylesheet is packaged'
+grep -Fq -- '--ink:#203a30' "$TEMP/response" || { echo 'FAIL: old stylesheet still served' >&2; exit 1; }
+echo 'PASS: verified release-specific Station 02 colors'
 "${CURL[@]}" -D "$TEMP/headers" -o /dev/null "$BASE/static/spice-view.html"
 grep -Eiq '^x-frame-options:[[:space:]]*SAMEORIGIN' "$TEMP/headers" || {
   echo 'FAIL: SPICE frame policy not configured' >&2; exit 1;
@@ -48,4 +53,4 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   fi
   echo 'PASS: guacd has no published host port'
 fi
-echo 'PASS: non-destructive Switchyard v0.5.5-dev.1 smoke checks complete'
+echo 'PASS: non-destructive Switchyard v0.5.6-dev.1 smoke checks complete'
