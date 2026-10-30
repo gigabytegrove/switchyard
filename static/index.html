@@ -90,6 +90,9 @@ http://ops.home.arpa:9791"></textarea>
               <button type="button" data-page="health" class="nav-item"><span class="nav-symbol" aria-hidden="true">◉</span> System health</button>
               <button type="button" data-page="runbooks" class="nav-item"><span class="nav-symbol" aria-hidden="true">⌘</span> Runbooks</button>
               <button type="button" data-page="activity" class="nav-item"><span class="nav-symbol" aria-hidden="true">◷</span> Audit journal</button>
+              <button type="button" id="sshExport" class="nav-item">Export SSH inventory</button>
+              <button type="button" id="sshImport" class="nav-item">Import SSH inventory</button>
+              <input id="sshImportFile" type="file" accept=".json,application/json" hidden aria-label="SSH inventory JSON">
             </div>
           </details>
         </nav>
@@ -112,29 +115,24 @@ http://ops.home.arpa:9791"></textarea>
         <div class="breadcrumb"><span class="crumb-prefix">WORKSPACE</span><b aria-hidden="true">/</b><strong id="bread">Machines</strong></div>
         <div class="top-right"><span class="station-version" id="stationVersion">0.5.9-dev.1</span><span id="clock"></span></div>
       </div>
-      <section id="page-machines" class="page machine-directory-page hidden" hidden aria-hidden="true" aria-labelledby="machineDirectoryTitle">
-        <div class="directory-hero"><div class="directory-hero-copy"><p class="directory-index">MACHINE DIRECTORY <span aria-hidden="true">—</span> YOUR NETWORK, ONE PLACE</p><h1 id="machineDirectoryTitle">Where to?</h1><p>Choose a system. Start a session. Get straight to work.</p></div>
-          <div class="directory-hero-status"><span class="hero-status-symbol" aria-hidden="true">↗</span><strong id="machineCount" role="status">Loading inventory</strong><small>SSH, RDP, VNC and SPICE connections</small></div></div>
-        <div class="directory-content">
-          <div class="directory-toolbar"><label class="sr-only" for="machineSearch">Search machines</label><input id="machineSearch" type="search" placeholder="Search machine, IP address, or folder" autocomplete="off">
-            <label class="sr-only" for="machineEnvironment">Environment</label><select id="machineEnvironment" aria-label="Filter machines by environment"><option value="">Every environment</option></select>
-            <button type="button" id="newFolder" class="action-quiet">New folder</button><button type="button" class="action-primary" data-action="new-asset">+ Add machine</button>
-            <details class="station-dropdown import-export"><summary>Import / export <span aria-hidden="true">⌄</span></summary><div class="station-dropdown-menu"><button type="button" class="action-quiet" id="sshExport">Export SSH inventory</button><button type="button" class="action-quiet" id="sshImport">Import SSH inventory</button></div></details>
-            <input id="sshImportFile" type="file" accept=".json,application/json" hidden aria-label="Switchyard SSH inventory JSON"></div>
-          <div class="directory-list-head" aria-hidden="true"><span>MACHINE / ADDRESS</span><span>AVAILABLE ACCESS</span><span>OPEN</span></div>
-          <div id="machineDirectory" class="machine-directory" aria-live="polite"><div class="machine-empty">Loading your machines…</div></div>
-          <footer class="directory-footer"><span><b aria-hidden="true">●</b> Direct connections, no remote agent</span><span>Stored on your own server · SSH host keys verified before access</span></footer>
-        </div>
-      </section>
+      <!-- Compatibility-only DOM for inventory export and legacy directory bindings.
+           This is not a page: Machines always opens the two-pane workbench. -->
+      <div id="legacyMachineDirectoryBindings" hidden>
+        <input id="machineSearch" type="search" aria-label="Legacy inventory filter">
+        <select id="machineEnvironment" aria-label="Legacy environment filter"><option value="">All</option></select>
+        <span id="machineCount"></span>
+        <div id="machineDirectory"></div>
+        <button type="button" id="newFolder">New folder</button>
+      </div>
       <section id="page-machine" class="page machine-workspace hidden" aria-label="Connection workbench">
         <div id="machineLayout" class="machine-layout">
           <div class="machine-work-area">
             <header class="workbench-command-bar">
-              <button id="machineBackToDirectory" type="button" class="workbench-back" aria-label="Hide or show Machines panel" title="Hide or show Machines panel">☰</button>
+              <button id="machineBackToDirectory" type="button" class="workbench-back sr-only" tabindex="-1" aria-label="Toggle Machines panel">☰</button>
               <div class="workbench-machine-identity"><div class="workbench-machine-text"><h1 id="machineTitle">Select a machine</h1><div class="machine-compact-meta"><span id="machineAddress" class="mono">Select an entry in the machine directory</span><span id="machineAvailability" role="status"></span><span id="machineFolderLabel" class="hidden"></span></div></div></div>
               <div class="machine-masthead-actions">
                 <button id="machinePrimaryConnect" type="button" class="action-primary">New SSH</button>
-                <button id="machineTreeToggle" type="button" class="action-quiet" aria-controls="machineSwitcher" aria-expanded="false" aria-label="Show machine directory">Machines</button>
+                <button id="machineTreeToggle" type="button" class="action-quiet" aria-controls="machineSwitcher" aria-expanded="true" aria-label="Toggle Machines panel">Machines</button>
                 <label for="terminalLayoutMode" class="sr-only">Terminal layout</label><select id="terminalLayoutMode" class="terminal-layout-select" aria-label="Terminal layout"><option value="1">Single</option><option value="2">Split 2</option><option value="4">Grid 4</option></select>
                 <button id="workbenchSessionsToggle" type="button" class="action-quiet" aria-controls="workbenchSessions" aria-expanded="false">Sessions</button>
                 <button id="workbenchFocusToggle" type="button" class="action-quiet" aria-pressed="false" title="Toggle focused session view (F8)">Focus view</button>
@@ -151,7 +149,7 @@ http://ops.home.arpa:9791"></textarea>
             <div class="workbench-stage" id="machineContent"><section id="machinePanel-overview" class="machine-panel workbench-launcher" aria-label="Connection options"><div id="machineOverviewContent"></div></section><section id="machinePanel-terminals" class="machine-panel workbench-terminal hidden" aria-label="SSH terminal"></section><section id="machinePanel-desktops" class="machine-panel workbench-desktop hidden" aria-label="Remote desktop"></section></div>
             <aside id="machineInfoDrawer" class="machine-info-drawer hidden" aria-label="Machine connection details"><div class="info-drawer-head"><strong>Connection details</strong><button id="machineInfoClose" type="button" class="tree-icon-btn" aria-label="Close details">×</button></div><div id="machineInfoContents" class="machine-info-contents"></div></aside>
           </div>
-          <div class="machine-rail-resize" id="machineRailResize" role="separator" aria-label="Resize connections directory" aria-orientation="vertical" aria-valuemin="196" aria-valuemax="440" aria-valuenow="276" tabindex="-1" hidden></div>
+          <div class="machine-rail-resize" id="machineRailResize" role="separator" aria-label="Resize connections directory" aria-orientation="vertical" aria-valuemin="196" aria-valuemax="440" aria-valuenow="236" tabindex="0"></div>
           <aside class="machine-context" aria-label="Switch machine">
             <div class="workbench-tree-head"><div class="tree-title"><strong>Machines</strong><span id="treeMachineCount">0 machines</span></div><div class="tree-actions"><button id="treeNewFolder" type="button" class="tree-icon-btn" title="Create folder" aria-label="Create folder">⊕</button><button id="treeNewMachine" type="button" class="tree-icon-btn" title="Add machine" aria-label="Add machine">＋</button><button id="treeClose" type="button" class="tree-icon-btn" aria-label="Close machine switcher">×</button></div></div>
             <label class="sr-only" for="machineSwitchSearch">Search machines and folders</label><input id="machineSwitchSearch" type="search" placeholder="Type a name, address, or folder" autocomplete="off" aria-controls="machineSwitcher"><nav id="machineSwitcher" class="connection-tree" aria-label="Machines and folders"></nav><div class="tree-foot"><kbd class="tree-shortcut">Ctrl K</kbd> Search machines</div>
