@@ -171,6 +171,9 @@ function initMachineWorkspace() {
   $('#machineAddConnection').addEventListener('click', openConnectionPicker);
   $('#connectionPickerClose').addEventListener('click',()=>$('#connectionPicker').close());
   $('#connectionPickerCancel').addEventListener('click',()=>$('#connectionPicker').close());
+  $('#connectionImportVV').addEventListener('click',()=>{
+    $('#connectionPicker').close();$('#spiceVVFile').click();
+  });
   $('#connectionPicker').addEventListener('click',event=>{
     if(event.target===$('#connectionPicker'))$('#connectionPicker').close();
   });

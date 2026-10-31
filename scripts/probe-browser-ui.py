@@ -267,7 +267,8 @@ def run():
                   const rail=document.querySelector('.body-pane.operator-shell > .machine-context');
                   const selector=document.getElementById('fileAsset');
                   const old=selector.value;
-                  selector.value='';
+                  const oldHost=state.machineHost;
+                  state.machineHost=null;selector.value='';
                   navigate('files');
                   const valid=document.querySelector('#page-files:not(.hidden)') &&
                     document.querySelector('.explorer-body') &&
@@ -275,6 +276,7 @@ def run():
                     document.querySelector('#fileList') &&
                     document.querySelector('#fileContextMenu') &&
                     rail&&rail.getBoundingClientRect().width>=196;
+                  state.machineHost=oldHost;
                   navigate('machine');selector.value=old;
                   return !!valid;
                 })()"""), "SFTP file manager did not reuse persistent machine rail"
