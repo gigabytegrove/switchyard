@@ -789,3 +789,195 @@ dialog.editor-dialog .command-input{min-height:240px;height:48dvh}
   #shell .machine-layout.tree-open #machineTreeToggle{display:none!important}
   #shell .machine-layout:not(.tree-open) #machineTreeToggle{display:inline-flex!important}
 }
+
+
+/* Operator shell: the machine directory and connection tabs are independent of
+   individual tool pages. These rules intentionally supersede legacy page chrome. */
+#shell .body-pane.operator-shell{
+  --operator-rail:var(--wb-rail,236px);
+  display:grid!important;position:relative;overflow:hidden;
+  grid-template-columns:var(--operator-rail) 5px minmax(0,1fr);
+  grid-template-rows:32px minmax(0,1fr);
+  background:#f9f7f7;
+}
+#shell .body-pane.operator-shell>.topbar{display:none!important}
+#shell .body-pane.operator-shell>.page{
+  display:block;grid-column:3;grid-row:2;
+  height:100%;min-height:0;width:100%;min-width:0;
+  max-width:none;overflow-y:auto;
+  margin:0;
+}
+#shell .body-pane.operator-shell>.page.hidden{display:none!important}
+#shell .body-pane.operator-shell>.machine-context{
+  display:flex!important;flex-direction:column;
+  grid-column:1;grid-row:1/3;
+  position:relative!important;inset:auto!important;
+  width:100%!important;height:100%!important;
+  visibility:visible;pointer-events:auto;
+  background:#f4f1f3;border-right:1px solid #c7bfc6;
+  overflow:hidden;box-shadow:none!important;
+  z-index:4;transform:none!important;transition:none!important;
+}
+#shell .body-pane.operator-shell>.machine-rail-resize{
+  display:block!important;
+  grid-column:2;grid-row:1/3;position:relative!important;
+  width:5px;height:100%;cursor:col-resize;touch-action:none;
+  border-left:1px solid #c4bac2;border-right:1px solid #aaa1aa;
+  background:#d5cdd3;z-index:3;
+}
+#shell .body-pane.operator-shell>.machine-rail-resize:hover,
+#shell .body-pane.operator-shell>.machine-rail-resize:focus-visible{background:#d88d9b}
+#shell .body-pane.operator-shell:not(.tree-open){grid-template-columns:0 0 minmax(0,1fr)}
+#shell .body-pane.operator-shell:not(.tree-open)>.machine-context{
+  visibility:hidden;pointer-events:none;width:0!important;
+}
+#shell .body-pane.operator-shell:not(.tree-open)>.machine-rail-resize{
+  visibility:hidden;pointer-events:none;width:0;
+}
+#shell .body-pane.operator-shell>.workbench-session-dock{
+  display:flex!important;grid-column:3;grid-row:1;position:relative;
+  width:100%;height:32px;min-height:0;max-height:32px;
+  background:#e9e5e8;border-bottom:1px solid #c8bec6;
+  z-index:3;overflow:hidden;
+}
+#shell .body-pane.operator-shell:not(.has-sessions){
+  grid-template-rows:0 minmax(0,1fr);
+}
+#shell .body-pane.operator-shell:not(.has-sessions)>.workbench-session-dock{
+  display:none!important;
+}
+#shell .body-pane.operator-shell.has-sessions #workbenchSessions{
+  display:flex!important;overflow-x:auto;white-space:nowrap;scrollbar-width:thin;
+}
+#shell .body-pane.operator-shell.has-sessions .session-dock-caption{
+  display:none!important;
+}
+#shell .body-pane.operator-shell .workbench-session-tab{
+  min-height:31px;height:31px;max-height:31px;
+  min-width:0;padding:5px 12px;white-space:nowrap;
+  font-size:11px;font-weight:650;
+}
+#shell .body-pane.operator-shell .workbench-session-item{
+  display:flex;align-items:center;min-width:0;
+}
+#shell .body-pane.operator-shell .workbench-tab-close{
+  min-height:25px;padding:2px 7px;
+}
+#shell .machine-layout,#shell.session-focus .machine-layout{
+  display:block!important;grid-template-columns:none!important;
+  width:100%;height:100%;min-height:0;
+}
+#shell .machine-layout>.machine-work-area{
+  display:flex!important;width:100%;height:100%;
+}
+#shell .machine-layout::after{display:none!important}
+#shell .workbench-session-dock:not(.operator-shell>.workbench-session-dock){display:none}
+#shell .workbench-terminal .terminal-tabs{display:none!important}
+#shell .workbench-terminal .terminal-heading{display:none!important}
+#shell .workbench-terminal .terminal-hint{display:none!important}
+#shell .machine-masthead-actions #workbenchSessionsToggle{display:none!important}
+#shell.session-focus .workbench-session-dock{display:flex!important}
+#shell .body-pane.operator-shell.tree-open #treeClose{display:inline-flex}
+#shell .body-pane.operator-shell.tree-open #machineTreeToggle{display:none!important}
+#shell .body-pane.operator-shell:not(.tree-open) #machineTreeToggle{display:inline-flex!important}
+#shell .body-pane.operator-shell>.page:not(#page-machine){
+  padding:16px 22px 28px;
+}
+#shell .body-pane.operator-shell .section-kicker{
+  display:none!important;
+}
+#shell .body-pane.operator-shell .heading-row{
+  margin:0 0 14px;align-items:center;gap:10px;
+}
+#shell .body-pane.operator-shell .heading-row h1{
+  font-size:clamp(19px,2vw,25px);line-height:1.12;
+  letter-spacing:-.02em;margin:0;
+}
+#shell .body-pane.operator-shell .heading-row p{
+  font-size:12px;line-height:1.4;margin:4px 0 0;max-width:750px;
+}
+#shell .body-pane.operator-shell .file-controls,
+#shell .body-pane.operator-shell .list-controls{
+  margin-bottom:12px;align-items:center;gap:7px;
+}
+#shell .body-pane.operator-shell .file-controls>label{
+  flex:0 1 auto;min-width:0;
+}
+#shell .body-pane.operator-shell .path-bar{margin:6px 0 10px}
+#shell .body-pane.operator-shell .asset-table{border-top:1px solid #beb3bc}
+#shell .body-pane.operator-shell .service-row,
+#shell .body-pane.operator-shell .docker-row{min-width:0}
+#shell .body-pane.operator-shell .service-identity,
+#shell .body-pane.operator-shell .docker-row>div:first-child{
+  min-width:0;overflow:hidden;
+}
+#shell .body-pane.operator-shell .docker-row strong,
+#shell .body-pane.operator-shell .docker-row small,
+#shell .body-pane.operator-shell .service-identity strong,
+#shell .body-pane.operator-shell .service-identity small{
+  display:block;max-width:100%;overflow:hidden;white-space:nowrap;
+  text-overflow:ellipsis;overflow-wrap:normal;
+}
+#shell .body-pane.operator-shell .docker-row{
+  grid-template-columns:minmax(160px,2fr) minmax(90px,.7fr) minmax(100px,1.1fr) auto;
+  column-gap:10px;padding:10px 8px;
+}
+#shell .body-pane.operator-shell .service-row{
+  grid-template-columns:minmax(160px,2.2fr) minmax(105px,.8fr) auto;
+  column-gap:10px;padding:9px 8px;
+}
+#shell .body-pane.operator-shell .docker-row:hover,
+#shell .body-pane.operator-shell .service-row:hover{background:#f4eff2}
+#shell .body-pane.operator-shell .docker-ports{
+  min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+}
+#shell .body-pane.operator-shell .asset-row-actions,
+#shell .body-pane.operator-shell .file-tools{flex-wrap:nowrap;gap:4px}
+#shell .body-pane.operator-shell .mini-btn{min-width:0;padding:5px 7px;font-size:11px}
+@media(max-width:1100px){
+  #shell .body-pane.operator-shell .docker-row{
+    grid-template-columns:minmax(150px,2fr) minmax(80px,1fr) auto;
+  }
+  #shell .body-pane.operator-shell .docker-row>.docker-ports{display:none}
+  #shell .body-pane.operator-shell .service-row{
+    grid-template-columns:minmax(140px,2fr) minmax(86px,1fr) auto;
+  }
+}
+@media(max-width:760px){
+  #shell .body-pane.operator-shell{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  #shell .body-pane.operator-shell>.page,
+  #shell .body-pane.operator-shell>.workbench-session-dock{
+    grid-column:1;
+  }
+  #shell .body-pane.operator-shell>.machine-context,
+  #shell .body-pane.operator-shell:not(.tree-open)>.machine-context{
+    position:absolute!important;top:0!important;left:0!important;
+    width:min(284px,calc(100vw - 40px))!important;height:100%!important;
+    visibility:visible;pointer-events:none;
+    transform:translateX(-106%)!important;
+    transition:transform 180ms!important;
+    z-index:105!important;
+  }
+  #shell .body-pane.operator-shell.tree-open>.machine-context{
+    pointer-events:auto;transform:translateX(0)!important;
+  }
+  #shell .body-pane.operator-shell.tree-open::after{
+    content:"";position:absolute;inset:0;z-index:104;
+    background:#17131b77;pointer-events:auto;
+  }
+  #shell .body-pane.operator-shell>.machine-rail-resize{display:none!important}
+  #shell .body-pane.operator-shell>.page:not(#page-machine){padding:12px 11px 20px}
+  #shell .body-pane.operator-shell .docker-row,
+  #shell .body-pane.operator-shell .service-row{
+    grid-template-columns:minmax(0,1fr);gap:5px;
+  }
+  #shell .body-pane.operator-shell .docker-row>.docker-ports{display:block}
+  #shell .body-pane.operator-shell .asset-row-actions,
+  #shell .body-pane.operator-shell .file-tools{flex-wrap:wrap}
+}
+@media(prefers-reduced-motion:reduce){
+  #shell .body-pane.operator-shell>.machine-context{transition:none!important}
+}
