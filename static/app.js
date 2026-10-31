@@ -653,7 +653,9 @@ function openMachine(host){
   state.machineHost=normalizedHost(host);
   if(window.matchMedia('(max-width:760px)').matches)setMachineTreeOpen(false);
   const asset=machineAsset();
-  for(const id of ['fileAsset','dockerAsset','healthAsset','serviceAsset'])if(asset)$('#'+id).value=asset.id;
+  // Never silently reuse another host's SFTP/Docker/service target when
+  // the selected machine has only RDP/VNC/SPICE configured.
+  for(const id of ['fileAsset','dockerAsset','healthAsset','serviceAsset'])$('#'+id).value=asset?.id||'';
   $('#filePath').value='.';
   state.currentTab=[...state.tabs.keys()].find(id=>normalizedHost(state.tabs.get(id).asset.host)===state.machineHost)||null;
   updateMachineHeader();renderTabs();renderMachineOverview();renderDesktopList();renderMachineSwitcher();
