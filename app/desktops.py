@@ -135,6 +135,9 @@ class InventoryImport(BaseModel):
 
 class VirtViewerInput(BaseModel):
     contents: str = Field(min_length=1, max_length=16384)
+    save_bookmark: bool = False
+    bookmark_id: str | None = Field(default=None, max_length=64)
+
 
 
 class BatchProbeInput(BaseModel):
@@ -183,6 +186,16 @@ def initialize(dbconn):
         );
         CREATE INDEX IF NOT EXISTS desktop_environment_idx
           ON desktop_connections(environment, label);
+        -- Only stable, non-secret console metadata is stored. Proxmox tickets,
+        -- proxies, guest passwords and CA material remain ephemeral.
+        CREATE TABLE IF NOT EXISTS spice_vv_bookmarks (
+          id TEXT PRIMARY KEY,
+          label TEXT NOT NULL,
+          node TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS spice_vv_bookmarks_node
+          ON spice_vv_bookmarks(node,label);
         ''')
         # The 0.4.0 desktop table may already exist after an RDP/VNC alpha install.
         columns = {row['name'] for row in db.execute('PRAGMA table_info(desktop_connections)')}
@@ -505,12 +518,70 @@ def install_desktops(app, dbconn, require_auth, session_from_ws, vault_password,
         audit('desktop.probe.batch', str(len(results)))
         return {'count':len(results), 'results':results}
 
+    @app.get('/api/desktops/spice/bookmarks')
+    def list_spice_bookmarks(_=Depends(require_auth)):
+        with dbconn() as db:
+            return [dict(row) for row in db.execute(
+                'SELECT id,label,node,created_at FROM spice_vv_bookmarks '
+                'ORDER BY label COLLATE NOCASE LIMIT 128')]
+
+    @app.delete('/api/desktops/spice/bookmarks/{bookmark_id}')
+    def delete_spice_bookmark(bookmark_id: str, _=Depends(require_auth)):
+        with dbconn() as db:
+            deleted = db.execute('DELETE FROM spice_vv_bookmarks WHERE id=?',
+                                 (bookmark_id,)).rowcount
+        if not deleted:
+            raise HTTPException(404, 'SPICE console shortcut not found')
+        audit('desktop.spice.bookmark_deleted', bookmark_id)
+        return {'ok': True}
+
     @app.post('/api/desktops/spice/import-vv')
     def import_virt_viewer(payload: VirtViewerInput, response: Response, request: Request, _=Depends(require_auth)):
         try:
             label, settings = parse_virt_viewer(payload.contents)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        # For Proxmox .vv files the remote destination is a ticket token.
+        # Derive the *display identity* only from the validated TLS subject or
+        # proxy hostname; never persist the token, password, CA or proxy URL.
+        if settings.spice_server_name:
+            node = settings.spice_server_name
+        elif settings.spice_proxy:
+            from .spice import proxy_endpoint
+            node = proxy_endpoint(settings.spice_proxy)[0]
+        else:
+            node = settings.host
+        bookmark = None
+        if payload.bookmark_id or payload.save_bookmark:
+            with dbconn() as db:
+                if payload.bookmark_id:
+                    saved = db.execute(
+                        'SELECT * FROM spice_vv_bookmarks WHERE id=?',
+                        (payload.bookmark_id,)).fetchone()
+                    if not saved:
+                        raise HTTPException(404, 'Saved SPICE console not found')
+                    if saved['label'] != label or saved['node'].lower() != node.lower():
+                        raise HTTPException(409,
+                            'This .vv file belongs to another console. Export a fresh '
+                            '.vv for the saved VM, or import it as a new connection.')
+                    bookmark = dict(saved)
+                else:
+                    saved = db.execute(
+                        'SELECT * FROM spice_vv_bookmarks WHERE label=? AND node=? COLLATE NOCASE',
+                        (label,node)).fetchone()
+                    if saved:
+                        bookmark = dict(saved)
+                    else:
+                        count = db.execute('SELECT count(*) FROM spice_vv_bookmarks').fetchone()[0]
+                        if count >= 128:
+                            raise HTTPException(409, 'At most 128 SPICE console shortcuts are supported')
+                        bookmark = {'id':uuid.uuid4().hex, 'label':label,
+                                    'node':node, 'created_at':int(time.time())}
+                        db.execute(
+                            'INSERT INTO spice_vv_bookmarks(id,label,node,created_at) VALUES(?,?,?,?)',
+                            (bookmark['id'],label,node,bookmark['created_at']))
+            if payload.save_bookmark:
+                audit('desktop.spice.bookmark_saved', bookmark['id'])
         with GUARD:
             cleanup_tickets()
             cleanup_spice_groups()
@@ -522,8 +593,9 @@ def install_desktops(app, dbconn, require_auth, session_from_ws, vault_password,
                                      session_fingerprint(request.cookies.get('switchyard_session','')))
         response.headers['Cache-Control'] = 'no-store'
         audit('desktop.spice.vv_ticket', 'one-time')
-        return {'ticket': token, 'expires_in': 30, 'protocol': 'spice',
-                'label': label, 'spice_password': settings.password}
+        return {'ticket': token, 'expires_in': TICKET_TTL, 'protocol': 'spice',
+                'label': label, 'node':node, 'bookmark':bookmark,
+                'spice_password': settings.password}
 
     @app.get('/api/desktops/gateway/status')
     async def desktop_gateway_status(_=Depends(require_auth)):
