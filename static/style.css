@@ -1212,3 +1212,110 @@ dialog.editor-dialog .command-input{min-height:240px;height:48dvh}
 .connection-picker-options span{font-size:11px;line-height:1.4;color:#685f68}
 .connection-picker-foot{border-top:1px solid #e0d7df;padding:10px 20px;text-align:right}
 @media(max-width:520px){.connection-picker-options{grid-template-columns:1fr}}
+
+
+/* Connection-scoped navigation: application-level menu remains clean.
+   A machine only gains file/system tools after a verified SSH login. */
+#shell .body-pane.operator-shell{
+  grid-template-rows:32px 0 minmax(0,1fr);
+}
+#shell .body-pane.operator-shell.tools-visible{
+  grid-template-rows:32px 36px minmax(0,1fr);
+}
+#shell .body-pane.operator-shell:not(.has-sessions){
+  grid-template-rows:0 0 minmax(0,1fr);
+}
+#shell .body-pane.operator-shell>.machine-context{
+  grid-row:1/4;
+}
+#shell .body-pane.operator-shell>.page{
+  grid-row:3;
+}
+#shell .body-pane.operator-shell>.machine-tool-navigation{
+  grid-column:3;grid-row:2;
+  position:relative;min-width:0;min-height:0;
+  display:flex;align-items:center;gap:1px;
+  background:#f0ebef;border-bottom:1px solid #c9c0c7;
+  padding:0 7px;overflow:visible;z-index:9;
+}
+#shell .body-pane.operator-shell>.machine-tool-navigation[hidden]{
+  display:none!important;
+}
+#shell .machine-tools-identity{
+  display:flex;align-items:center;gap:7px;min-width:0;
+  max-width:260px;margin-right:6px;padding-right:10px;
+  border-right:1px solid #d4cad2;
+}
+#shell .machine-tools-identity>span{
+  min-width:0;max-width:180px;
+  font-size:12px;font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#shell .machine-tools-identity>small{
+  color:#6a5d66;font-size:10px;white-space:nowrap;
+}
+#shell .machine-tool-link,
+#shell .machine-tool-more>summary{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:32px;height:32px;
+  padding:4px 11px;border:0;border-bottom:2px solid transparent;
+  border-radius:0;background:transparent;color:#493e47;
+  font-size:11px;font-weight:650;white-space:nowrap;cursor:pointer;
+}
+#shell .machine-tool-link:hover,
+#shell .machine-tool-more>summary:hover{
+  color:#92263b;background:#e6dce4;
+}
+#shell .machine-tool-link.active,
+#shell .machine-tool-link[aria-current="page"]{
+  border-bottom-color:#ad2841;color:#842139;background:#fff;
+}
+#shell .machine-tool-more{position:relative;flex:none}
+#shell .machine-tool-more>summary{list-style:none}
+#shell .machine-tool-more>summary::-webkit-details-marker{display:none}
+#shell .machine-tool-more[open]>summary{color:#872338;background:#fff}
+#shell .machine-tool-more .machine-tool-menu{
+  display:flex;flex-direction:column;
+  position:absolute;right:0;top:100%;min-width:164px;
+  padding:4px;z-index:21;background:#fff;
+  border:1px solid #c8bbc5;box-shadow:0 10px 28px #2b1b292c;
+}
+#shell .machine-tool-more .machine-tool-menu .machine-tool-link{
+  justify-content:flex-start;width:100%;height:34px;min-height:34px;
+  padding:6px 10px;border-bottom:0;text-align:left;
+}
+#shell .machine-tool-more .machine-tool-menu .machine-tool-link.active{
+  box-shadow:inset 3px 0 #ad2841;
+}
+#shell .body-pane.operator-shell>.page:not(#page-machine){
+  min-height:0;
+}
+#shell .machine-bookmark-profile{
+  display:flex;align-items:center;gap:2px;min-width:0;
+}
+#shell .machine-bookmark-profile>.machine-profile{
+  flex:1;min-width:0;
+}
+#shell .machine-bookmark-remove{
+  flex:none;width:25px;height:27px;
+  border:0;background:transparent;color:#795b65;font-size:18px;
+}
+#shell .machine-bookmark-remove:hover{color:#ae2440;background:#eadce3}
+.spice-bookmark-choice{
+  display:inline-flex;gap:6px;align-items:center;
+  font-size:11px;color:#5a4c57;line-height:1.35;
+  margin-right:auto;text-align:left;max-width:280px;
+}
+.spice-bookmark-choice input{width:15px;height:15px;flex:none;accent-color:#a72843}
+@media(max-width:960px){
+  #shell .machine-tools-identity>small{display:none}
+  #shell .machine-tools-identity{max-width:130px}
+}
+@media(max-width:680px){
+  #shell .body-pane.operator-shell>.machine-tool-navigation{
+    padding:0 4px;overflow-x:auto;overflow-y:visible;scrollbar-width:thin;
+  }
+  #shell .machine-tools-identity{display:none}
+  #shell .machine-tool-link,
+  #shell .machine-tool-more>summary{padding:3px 8px;font-size:10px}
+  #shell .machine-tool-more .machine-tool-menu{position:fixed;top:auto;right:8px}
+}
