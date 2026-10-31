@@ -804,10 +804,10 @@ function navigate(page) {
   $('#bread').textContent = ({ machine:'Machine / ' + machineTitle(), machines:'Machines', overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', services: 'System services', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
   if (page === 'desktops') { refreshDesktops().catch(showError); refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); fitDesktop(desktopCurrent()); }
   if (page === 'runbooks') refreshRunbooks().catch(showError);
-  if (page === 'files') {const a=machineAsset(); if(a){$('#fileAsset').value=a.id;browseFiles().catch(showError);}}
-  if (page === 'docker') {const a=machineAsset(); if(a){$('#dockerAsset').value=a.id;refreshDocker().catch(showError);}}
-  if (page === 'services') {const a=machineAsset();if(a)$('#serviceAsset').value=a.id;refreshServices().catch(showError);}
-  if (page === 'health') {const a=machineAsset();if(a)$('#healthAsset').value=a.id;refreshHealthHistory().catch(showError);}
+  if (page === 'files') {const a=machineAsset();$('#fileAsset').value=a?.id||'';browseFiles().catch(showError);}
+  if (page === 'docker') {const a=machineAsset();$('#dockerAsset').value=a?.id||'';if(a)refreshDocker().catch(showError);else{$('#dockerList').replaceChildren(node('div','empty-state','This machine has no SSH profile for Docker management.'));$('#dockerHostLabel').textContent='Select a machine with SSH access.';$('#dockerSummary').textContent='';}}
+  if (page === 'services') {const a=machineAsset();$('#serviceAsset').value=a?.id||'';refreshServices().catch(showError);}
+  if (page === 'health') {const a=machineAsset();$('#healthAsset').value=a?.id||'';if(a)refreshHealthHistory().catch(showError);else{$('#healthMetrics').replaceChildren();$('#healthHistory').replaceChildren();$('#healthStatus').textContent='This machine needs an SSH profile for agentless system health.';}}
   if (page === 'vault') vaultStatus().catch(showError);
   if (page === 'trust') refreshHosts().catch(showError);
   if (page === 'keys') refreshKeys().catch(showError);
