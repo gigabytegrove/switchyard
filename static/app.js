@@ -308,6 +308,7 @@ function syncMachineTools(){
   const connected=authenticatedSSHForHost();
   const operatorPage=state.page==='machine'||MACHINE_TOOL_PAGES.has(state.page);
   nav.hidden=!connected||!operatorPage;
+  $('#shell .body-pane')?.classList.toggle('tools-visible',!!connected&&!!operatorPage);
   if(!connected)return;
   $('#machineToolsHost').textContent=machineTitle();
   $('#machineToolsState').textContent='SSH connected · '+connected.asset.username+'@'+connected.asset.host;
