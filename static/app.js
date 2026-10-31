@@ -1244,36 +1244,351 @@ function renderFileSelect() {
   if (state.assets.some(a => a.id === selected)) select.value = selected;
 }
 async function fileAuth(a) { const pass = await promptPassword(a); return pass === null ? null : pass ? { 'X-SSH-Password': pass } : {}; }
-async function browseFiles() {
-  const a = state.assets.find(x => x.id === $('#fileAsset').value);
-  if (!a) { toast('Choose a remote host first.', true); return; }
-  const headers = await fileAuth(a); if (headers === null) return;
-  $('#fileList').replaceChildren(node('div', 'empty-state', 'Opening remote directory…'));
-  const data = await api(`/assets/${a.id}/files?path=${encodeURIComponent($('#filePath').value || '.')}`, { headers });
-  $('#filePath').value = data.path; $('#fileLocation').textContent = a.host + ' : ' + data.path;
-  const target = $('#fileList'); target.replaceChildren();
-  if (data.path !== '/') {
-    const parent = node('div', 'file-row');
-    parent.append(button('↰  Parent directory', 'file-name', () => { $('#filePath').value = data.path.split('/').slice(0, -1).join('/') || '/'; browseFiles(); }), node('span'), node('span')); target.append(parent);
-  }
-  if (!data.entries.length) target.append(node('div', 'empty-state', 'This directory is empty.'));
-  for (const entry of data.entries) {
-    const row = node('div', 'file-row'); const fullPath = (data.path === '/' ? '' : data.path) + '/' + entry.name;
-    const name = button((entry.directory ? '▣ ' : entry.symlink ? '↪ ' : '▤ ') + entry.name, 'file-name', () => { if (entry.directory) { $('#filePath').value = fullPath; browseFiles(); } else downloadFile(a, fullPath); });
-    const tools = node('div', 'file-tools');
-    tools.append(node('span', 'file-size', entry.directory ? 'DIR' : sizeLabel(entry.size)),
-      node('span', 'file-size mono', entry.permissions || '---'),
-      ...(!entry.directory && !entry.symlink ? [
-        button('Edit text', 'mini-btn', () => openFileEditor(a, fullPath).catch(showError)),
-        button('Copy', 'mini-btn', () => copyRemote(a, fullPath).catch(showError))] : []),
-      button('Move', 'mini-btn', () => moveRemote(a, fullPath).catch(showError)),
-      ...(!entry.symlink ? [button('Permissions', 'mini-btn',
-        () => chmodRemote(a, fullPath, entry.permissions).catch(showError))] : []),
-      button('Rename', 'mini-btn', () => renameRemote(a, fullPath).catch(showError)),
-      button('Delete', 'mini-btn danger', () => deleteRemote(a, fullPath, entry.directory).catch(showError)));
-    row.append(name, tools, node('span', 'file-size', new Date(entry.modified * 1000).toLocaleString())); target.append(row);
+/* Real SFTP explorer, deliberately layered over the existing authenticated API.
+   There is no local filesystem access or unimplemented remote operation here. */
+const explorerState = {
+  entries:[], path:'.', hostId:'', selected:new Set(),
+  sort:'name', descending:false, clipboard:null, request:0, anchor:null
+};
+function explorerAsset(){return state.assets.find(a=>String(a.id)===$('#fileAsset').value);}
+function explorerPath(dir,name){return (dir==='/'?'':dir.replace(/\/$/,''))+'/'+name;}
+function explorerParent(path){return path.split('/').slice(0,-1).join('/')||'/';}
+function explorerNavigate(path){
+  $('#filePath').value=path;
+  return browseFiles();
+}
+function explorerEntries(){
+  const query=$('#fileSearch').value.trim().toLocaleLowerCase();
+  const field=explorerState.sort;
+  return explorerState.entries.filter(e=>e.name.toLocaleLowerCase().includes(query))
+    .sort((a,b)=>{
+      if(a.directory!==b.directory)return a.directory?-1:1;
+      let d=(field==='name'||field==='permissions')
+        ?String(a[field]||'').localeCompare(String(b[field]||''),undefined,{numeric:true,sensitivity:'base'})
+        :Number(a[field]||0)-Number(b[field]||0);
+      if(!d)d=a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'});
+      return explorerState.descending?-d:d;
+    });
+}
+function explorerSelected(){
+  return explorerState.entries.filter(e=>explorerState.selected.has(explorerPath(explorerState.path,e.name)));
+}
+function explorerControls(){
+  const chosen=explorerSelected(),one=chosen.length===1,any=chosen.length>0;
+  $('#fileDownloadSelected').disabled=!one||chosen[0]?.directory||chosen[0]?.symlink;
+  $('#fileCopySelected').disabled=!any||chosen.some(e=>e.directory||e.symlink);
+  $('#fileCutSelected').disabled=!any;
+  $('#fileRenameSelected').disabled=!one;
+  $('#fileDeleteSelected').disabled=!any;
+  $('#filePaste').disabled=!explorerState.clipboard||explorerState.clipboard.hostId!==explorerState.hostId;
+  $('#fileSelectionStatus').textContent=any?chosen.length+' item'+(chosen.length===1?'':'s')+' selected':'No items selected';
+  const visible=explorerEntries(),marked=visible.filter(e=>explorerState.selected.has(explorerPath(explorerState.path,e.name))).length;
+  $('#fileSelectAll').checked=visible.length>0&&marked===visible.length;
+  $('#fileSelectAll').indeterminate=marked>0&&marked<visible.length;
+}
+function explorerBreadcrumbs(){
+  const nav=$('#fileBreadcrumb');nav.replaceChildren();
+  if(!explorerState.path||explorerState.path==='.')return;
+  const root=button('/','explorer-crumb',()=>explorerNavigate('/').catch(showError));
+  root.title='/';nav.append(root);
+  let current='';
+  for(const component of explorerState.path.split('/').filter(Boolean)){
+    current+='/'+component;
+    const dest=current;
+    const item=button(component,'explorer-crumb',()=>explorerNavigate(dest).catch(showError));
+    item.title=dest;nav.append(item);
   }
 }
+function explorerFolders(){
+  const tree=$('#fileFolderTree');tree.replaceChildren();
+  if(!explorerState.path||explorerState.path==='.')return;
+  const root=button('⌂  /','explorer-tree-folder',()=>explorerNavigate('/').catch(showError));
+  tree.append(root);
+  let current='';
+  for(const component of explorerState.path.split('/').filter(Boolean)){
+    current+='/'+component;
+    const dest=current;
+    const row=button('▸  '+component,'explorer-tree-folder active',()=>explorerNavigate(dest).catch(showError));
+    row.title=dest;tree.append(row);
+  }
+  for(const entry of explorerState.entries.filter(e=>e.directory)){
+    const dest=explorerPath(explorerState.path,entry.name);
+    const row=button('▹  '+entry.name,'explorer-tree-folder explorer-subfolder',()=>explorerNavigate(dest).catch(showError));
+    row.title=dest;tree.append(row);
+  }
+}
+function explorerCloseMenu(){
+  const menu=$('#fileContextMenu');if(menu)menu.hidden=true;
+}
+function explorerChoose(entry,event){
+  const path=explorerPath(explorerState.path,entry.name),selected=explorerState.selected;
+  if(event.shiftKey&&explorerState.anchor){
+    const visible=explorerEntries();
+    const from=visible.findIndex(e=>e.name===explorerState.anchor),to=visible.findIndex(e=>e.name===entry.name);
+    if(from>=0&&to>=0){
+      if(!event.ctrlKey&&!event.metaKey)selected.clear();
+      for(let i=Math.min(from,to);i<=Math.max(from,to);i++)selected.add(explorerPath(explorerState.path,visible[i].name));
+    }else selected.add(path);
+  }else if(event.ctrlKey||event.metaKey){
+    if(selected.has(path))selected.delete(path);else selected.add(path);
+  }else{
+    selected.clear();selected.add(path);
+  }
+  explorerState.anchor=entry.name;
+  renderExplorer();
+}
+async function explorerOpen(entry){
+  if(!entry)return;
+  const path=explorerPath(explorerState.path,entry.name);
+  if(entry.directory){await explorerNavigate(path);return;}
+  if(entry.symlink){fileMessage('Symlink targets cannot be safely opened from this view.',true);return;}
+  await downloadFile(explorerAsset(),path);
+}
+function explorerOpenMenu(event,entry){
+  event.preventDefault();
+  const path=explorerPath(explorerState.path,entry.name);
+  if(!explorerState.selected.has(path)){
+    explorerState.selected=new Set([path]);
+    renderExplorer();
+  }
+  const chosen=explorerSelected(),one=chosen.length===1?chosen[0]:null;
+  const menu=$('#fileContextMenu');menu.hidden=false;
+  for(const action of menu.querySelectorAll('[data-file-action]')){
+    const type=action.dataset.fileAction;
+    action.hidden=
+      (['open','rename','permissions','edit','download'].includes(type)&&!one)||
+      (['download','edit'].includes(type)&&(one?.directory||one?.symlink))||
+      (type==='permissions'&&one?.symlink)||
+      (type==='copy'&&chosen.some(e=>e.directory||e.symlink))||
+      (type==='paste'&&(!explorerState.clipboard||explorerState.clipboard.hostId!==explorerState.hostId));
+  }
+  menu.style.left='0px';menu.style.top='0px';
+  const rect=menu.getBoundingClientRect();
+  menu.style.left=Math.max(4,Math.min(event.clientX,innerWidth-rect.width-8))+'px';
+  menu.style.top=Math.max(4,Math.min(event.clientY,innerHeight-rect.height-8))+'px';
+  menu.querySelector('button:not([hidden])')?.focus();
+}
+function renderExplorer(){
+  const list=$('#fileList');list.replaceChildren();
+  const entries=explorerEntries();
+  for(const sort of $$('[data-file-sort]')){
+    const active=sort.dataset.fileSort===explorerState.sort;
+    sort.setAttribute('aria-pressed',String(active));
+    const marker=sort.querySelector('.sort-indicator');
+    if(marker)marker.textContent=active?(explorerState.descending?' ↓':' ↑'):'';
+  }
+  if(!entries.length){
+    list.append(node('div','explorer-empty',explorerState.entries.length?'No files match your filter.':'This directory is empty.'));
+  }
+  for(const entry of entries){
+    const full=explorerPath(explorerState.path,entry.name);
+    const row=node('div','explorer-file-row'+(explorerState.selected.has(full)?' selected':''));
+    row.setAttribute('role','listitem');row.dataset.path=full;row.tabIndex=0;
+    row.setAttribute('aria-selected',String(explorerState.selected.has(full)));
+    row.setAttribute('aria-label',(entry.directory?'Folder ':entry.symlink?'Link ':'File ')+entry.name);
+    const check=node('input');check.type='checkbox';
+    check.checked=explorerState.selected.has(full);
+    check.setAttribute('aria-label','Select '+entry.name);
+    check.addEventListener('change',event=>{
+      if(event.target.checked)explorerState.selected.add(full);
+      else explorerState.selected.delete(full);
+      explorerState.anchor=entry.name;renderExplorer();
+    });
+    const name=node('span','explorer-name');
+    const icon=node('span','explorer-file-icon',entry.directory?'▣':entry.symlink?'↪':'▤');
+    icon.setAttribute('aria-hidden','true');
+    const label=node('span','explorer-name-text',entry.name);
+    name.append(icon,label);
+    const size=node('span','explorer-meta',entry.directory?'Folder':sizeLabel(entry.size));
+    const modified=node('span','explorer-meta',entry.modified?new Date(entry.modified*1000).toLocaleString():'—');
+    const perms=node('span','explorer-meta mono',entry.permissions||'—');
+    row.append(check,name,size,modified,perms);
+    row.addEventListener('click',event=>{
+      if(event.target===check)return;
+      explorerChoose(entry,event);
+    });
+    row.addEventListener('dblclick',event=>{
+      event.preventDefault();explorerOpen(entry).catch(showError);
+    });
+    row.addEventListener('keydown',event=>{
+      if(event.key==='Enter'){event.preventDefault();explorerOpen(entry).catch(showError);}
+      if(event.key===' '){event.preventDefault();explorerChoose(entry,{ctrlKey:true,metaKey:false,shiftKey:false});}
+      if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){
+        event.preventDefault();
+        const bounds=row.getBoundingClientRect();
+        explorerOpenMenu({preventDefault(){},clientX:bounds.left+25,clientY:bounds.bottom-5},entry);
+      }
+    });
+    row.addEventListener('contextmenu',event=>explorerOpenMenu(event,entry));
+    list.append(row);
+  }
+  explorerBreadcrumbs();explorerFolders();explorerControls();
+  $('#fileLocation').textContent=explorerState.hostId?explorerState.path+' · '+explorerState.entries.length+' item'+(explorerState.entries.length===1?'':'s'):'No machine selected';
+}
+async function browseFiles(){
+  const a=explorerAsset();
+  const list=$('#fileList');
+  if(!a){
+    explorerState.entries=[];explorerState.selected.clear();explorerState.hostId='';
+    list.replaceChildren(node('div','explorer-empty','This machine has no SSH/SFTP profile. Add an SSH connection to browse its files.'));
+    $('#fileLocation').textContent='No SSH/SFTP host selected';
+    explorerControls();return;
+  }
+  const path=$('#filePath').value.trim()||'.';
+  const request=++explorerState.request;
+  const previousHost=explorerState.hostId,previousPath=explorerState.path;
+  if(previousHost!==String(a.id)||previousPath!==path)explorerState.selected.clear();
+  explorerCloseMenu();
+  list.replaceChildren(node('div','explorer-empty','Opening '+path+' on '+a.host+'…'));
+  try{
+    const headers=await fileAuth(a);
+    if(headers===null){
+      if(request===explorerState.request)list.replaceChildren(node('div','explorer-empty','Authentication cancelled.'));
+      return;
+    }
+    const data=await api('/assets/'+a.id+'/files?path='+encodeURIComponent(path),{headers});
+    if(request!==explorerState.request||$('#fileAsset').value!==String(a.id))return;
+    explorerState.entries=data.entries;
+    explorerState.path=data.path;
+    explorerState.hostId=String(a.id);
+    explorerState.selected.clear();
+    $('#filePath').value=data.path;
+    fileMessage('Directory loaded. Transfers are limited to 64 MiB per file; no automatic overwrites.');
+    renderExplorer();
+  }catch(error){
+    if(request===explorerState.request){
+      list.replaceChildren(node('div','explorer-error','Cannot open '+path+': '+error.message));
+      fileMessage(error.message,true);
+    }
+    throw error;
+  }
+}
+function explorerRemember(mode){
+  const chosen=explorerSelected(),asset=explorerAsset();
+  if(!chosen.length||!asset)return;
+  if(mode==='copy'&&chosen.some(e=>e.directory||e.symlink)){
+    fileMessage('Copy currently supports regular files only. Cut and paste can move directories.',true);return;
+  }
+  explorerState.clipboard={mode,hostId:String(asset.id),
+    paths:chosen.map(e=>({name:e.name,source:explorerPath(explorerState.path,e.name),directory:e.directory}))};
+  explorerControls();
+  fileMessage(chosen.length+' item'+(chosen.length===1?'':'s')+' ready to '+(mode==='copy'?'copy':'move')+'. Navigate to the destination and choose Paste.');
+}
+async function explorerPaste(){
+  const clip=explorerState.clipboard,asset=explorerAsset();
+  if(!clip||!asset||String(asset.id)!==clip.hostId)return;
+  const headers=await fileAuth(asset);if(headers===null)return;
+  const done=[],fail=[];
+  for(const item of clip.paths){
+    let destination=explorerPath(explorerState.path,item.name);
+    if(clip.mode==='copy'&&destination===item.source)destination+='.copy';
+    if(clip.mode==='cut'&&destination===item.source){fail.push(item.name+': already in this directory');continue;}
+    if(item.directory&&destination.startsWith(item.source+'/')){
+      fail.push(item.name+': cannot move a directory inside itself');continue;
+    }
+    try{
+      await api('/assets/'+asset.id+'/files/'+(clip.mode==='copy'?'copy':'rename'),
+        {method:'POST',body:{source:item.source,destination},headers});
+      done.push(item.name);
+    }catch(error){fail.push(item.name+': '+error.message);}
+  }
+  if(clip.mode==='cut'&&!fail.length)explorerState.clipboard=null;
+  await browseFiles();
+  fileMessage(done.length+' item'+(done.length===1?'':'s')+' '+(clip.mode==='copy'?'copied':'moved')+
+    (fail.length?'. Failed: '+fail.join(' | '):'.'),fail.length>0);
+}
+async function explorerAction(type){
+  explorerCloseMenu();
+  const chosen=explorerSelected(),one=chosen[0],asset=explorerAsset();
+  if(!asset)return;
+  if(type==='paste')return explorerPaste();
+  if(type==='copy'||type==='cut')return explorerRemember(type);
+  if(!one)return;
+  const path=explorerPath(explorerState.path,one.name);
+  if(type==='open')return explorerOpen(one);
+  if(type==='download'){
+    if(!one.directory&&!one.symlink)return downloadFile(asset,path);
+    return;
+  }
+  if(type==='edit'&&!one.directory&&!one.symlink)return openFileEditor(asset,path);
+  if(type==='rename')return renameRemote(asset,path);
+  if(type==='permissions'&&!one.symlink)return chmodRemote(asset,path,one.permissions);
+  if(type==='delete'){
+    if(!await confirmAction('Delete remote items',
+      'Permanently delete '+chosen.length+' selected item(s) from '+asset.host+'? Directories must be empty.','Delete'))return;
+    const headers=await fileAuth(asset);if(headers===null)return;
+    const errors=[];
+    for(const e of chosen){
+      const dest=explorerPath(explorerState.path,e.name);
+      try{
+        await api('/assets/'+asset.id+'/files?directory='+String(!!e.directory),
+          {method:'DELETE',body:{path:dest},headers});
+      }catch(error){errors.push(e.name+': '+error.message);}
+    }
+    await browseFiles();
+    fileMessage(errors.length?errors.join(' | '):'Selected remote items deleted.',errors.length>0);
+  }
+}
+function initExplorer(){
+  $('#fileBack').addEventListener('click',()=>explorerNavigate(explorerParent($('#filePath').value||explorerState.path)).catch(showError));
+  $('#fileRefresh').addEventListener('click',safeAsync(browseFiles));
+  $('#filePath').addEventListener('keydown',event=>{
+    if(event.key==='Enter'){event.preventDefault();browseFiles().catch(showError);}
+  });
+  $('#fileAsset').addEventListener('change',()=>{explorerState.selected.clear();browseFiles().catch(showError);});
+  $('#fileSearch').addEventListener('input',renderExplorer);
+  $('#fileSelectAll').addEventListener('change',event=>{
+    for(const e of explorerEntries()){
+      const path=explorerPath(explorerState.path,e.name);
+      if(event.target.checked)explorerState.selected.add(path);
+      else explorerState.selected.delete(path);
+    }
+    renderExplorer();
+  });
+  $$('[data-file-sort]').forEach(control=>control.addEventListener('click',()=>{
+    if(explorerState.sort===control.dataset.fileSort)explorerState.descending=!explorerState.descending;
+    else{explorerState.sort=control.dataset.fileSort;explorerState.descending=false;}
+    renderExplorer();
+  }));
+  const bound={fileDownloadSelected:'download',fileCopySelected:'copy',fileCutSelected:'cut',
+    filePaste:'paste',fileRenameSelected:'rename',fileDeleteSelected:'delete'};
+  for(const [id,action] of Object.entries(bound)){
+    $('#'+id).addEventListener('click',()=>explorerAction(action).catch(showError));
+  }
+  $$('[data-file-action]').forEach(el=>el.addEventListener('click',()=>explorerAction(el.dataset.fileAction).catch(showError)));
+  document.addEventListener('pointerdown',event=>{
+    if(!event.target.closest('#fileContextMenu'))explorerCloseMenu();
+  });
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape')explorerCloseMenu();
+    if(state.page!=='files'||event.target.closest('input,textarea,select,[contenteditable=true]'))return;
+    if(event.altKey&&event.key==='ArrowUp'){event.preventDefault();explorerNavigate(explorerParent(explorerState.path)).catch(showError);}
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='a'){
+      event.preventDefault();for(const e of explorerEntries())explorerState.selected.add(explorerPath(explorerState.path,e.name));
+      renderExplorer();
+    }
+    if(event.key==='F2'&&explorerSelected().length===1){event.preventDefault();explorerAction('rename').catch(showError);}
+    if(event.key==='Delete'&&explorerSelected().length){event.preventDefault();explorerAction('delete').catch(showError);}
+  });
+  const drop=$('#fileList');
+  drop.addEventListener('dragover',event=>{
+    if([...event.dataTransfer.types].includes('Files')){event.preventDefault();drop.classList.add('explorer-drop');}
+  });
+  drop.addEventListener('dragleave',()=>drop.classList.remove('explorer-drop'));
+  drop.addEventListener('drop',event=>{
+    drop.classList.remove('explorer-drop');
+    if(!event.dataTransfer.files.length)return;
+    event.preventDefault();
+    const input=$('#fileUpload');
+    if(typeof DataTransfer==='function'){
+      const transfer=new DataTransfer();
+      for(const file of event.dataTransfer.files)transfer.items.add(file);
+      input.files=transfer.files;
+      uploadFile({target:input}).catch(showError);
+    }else fileMessage('Drag-and-drop is unavailable in this browser; use Upload instead.',true);
+  });
+}
+
 function sizeLabel(bytes) { if (bytes < 1024) return bytes + ' B'; if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'; return (bytes / (1024 * 1024)).toFixed(1) + ' MB'; }
 async function downloadFile(a, path) {
   const headers = await fileAuth(a); if (headers === null) return;
@@ -2381,6 +2696,7 @@ function bind() {
   $('#assetForm').addEventListener('submit', safeAsync(saveAsset));
   $('#closeAssetDialog').addEventListener('click', () => $('#assetDialog').close());
   $('#cancelAsset').addEventListener('click', () => $('#assetDialog').close());
+  initExplorer();
   $('#fileBrowse').addEventListener('click', safeAsync(browseFiles));
   $('#fileUpload').addEventListener('change', safeAsync(uploadFile));
   $('#fileUploadButton').addEventListener('click', () => $('#fileUpload').click());
