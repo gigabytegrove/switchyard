@@ -176,7 +176,7 @@ function initMachineWorkspace() {
   $('#connectionPickerClose').addEventListener('click',()=>$('#connectionPicker').close());
   $('#connectionPickerCancel').addEventListener('click',()=>$('#connectionPicker').close());
   $('#connectionImportVV').addEventListener('click',()=>{
-    $('#connectionPicker').close();$('#spiceVVFile').click();
+    $('#connectionPicker').close();triggerSpiceVVImport();
   });
   $('#connectionPicker').addEventListener('click',event=>{
     if(event.target===$('#connectionPicker'))$('#connectionPicker').close();
@@ -2147,6 +2147,8 @@ async function refreshRunbooks() {
 
 /* Switchyard remote desktops: persistent inventory and ephemeral browser sessions. */
 let desktopRecords = [];
+let spiceBookmarks = [];
+let spiceImportBookmarkId = null;
 let desktopEditing = null;
 let desktopTabs = new Map();
 let currentDesktopTab = null;
@@ -2279,6 +2281,21 @@ async function refreshDesktopGateway() {
     target.textContent = 'RDP / VNC gateway: status unavailable';
     target.classList.add('desktop-gateway-error');
   }
+}
+async function refreshSpiceBookmarks(){
+  spiceBookmarks=await api('/desktops/spice/bookmarks');
+  renderMachineSwitcher();
+  if(state.machineHost)renderMachineOverview();
+}
+function triggerSpiceVVImport(bookmarkId=null){
+  spiceImportBookmarkId=bookmarkId;
+  const picker=$('#spiceVVFile');
+  picker.value='';
+  if(bookmarkId){
+    const bookmark=spiceBookmarks.find(b=>b.id===bookmarkId);
+    toast('Select a fresh Proxmox .vv file for '+(bookmark?.label||'this console')+'. Credentials are never stored.');
+  }
+  picker.click();
 }
 async function refreshDesktops() {
   // Never block host inventory on an independent gateway health check.
@@ -2539,14 +2556,25 @@ async function importSpiceVirtViewer() {
     if (file.size > 16384) throw Error('Virt-viewer file exceeds 16 KiB.');
     if (desktopTabs.size >= 8) throw Error('At most 8 desktop sessions may remain connected.');
     const contents = await file.text();
-    const response = await api('/desktops/spice/import-vv', {method:'POST',body:{contents}});
+    const bookmarkId=spiceImportBookmarkId;
+    const saveBookmark=!bookmarkId&&$('#spiceSaveBookmark').checked;
+    const response=await api('/desktops/spice/import-vv',{
+      method:'POST',body:{contents,bookmark_id:bookmarkId,save_bookmark:saveBookmark}
+    });
+    if(response.bookmark)await refreshSpiceBookmarks();
     openSpiceDesktop({
-      id: clientSessionId(), label: response.label, protocol: 'spice', read_only: false,
-      auth_type: 'interactive', environment: 'Imported session',
+      id: response.bookmark?.id||clientSessionId(),
+      label: response.label,
+      host: response.node,
+      protocol: 'spice', read_only: false,
+      auth_type: 'interactive', environment:'Proxmox',
     }, response);
-    toast('SPICE connection imported into a temporary session.');
+    toast(response.bookmark
+      ? 'SPICE console is in Machines. Export a fresh .vv in Proxmox for future sessions.'
+      : 'SPICE console opened for this session. No reusable shortcut was saved.');
   } finally {
-    picker.value = '';
+    picker.value='';
+    spiceImportBookmarkId=null;
   }
 }
 async function desktopCopyRemoteClipboard() {
@@ -2561,7 +2589,7 @@ async function desktopCopyRemoteClipboard() {
 }
 function bindDesktopUI() {
   $('#desktopNew').addEventListener('click', () => openDesktopEditor());
-  $('#spiceImport').addEventListener('click', () => $('#spiceVVFile').click());
+  $('#spiceImport').addEventListener('click', () => triggerSpiceVVImport());
   $('#spiceVVFile').addEventListener('change', safeAsync(importSpiceVirtViewer));
   $('#desktopRefresh').addEventListener('click', safeAsync(refreshDesktops));
   $('#desktopHistoryRefresh').addEventListener('click', safeAsync(refreshDesktopHistory));
