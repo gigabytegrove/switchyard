@@ -134,6 +134,10 @@ function mountOperatorShell() {
   const width=layout.style.getPropertyValue('--wb-rail');
   if(width)body.style.setProperty('--wb-rail',width);
 }
+function openConnectionPicker(){
+  $('#connectionPicker').showModal();
+  $('#connectionPicker [data-new-protocol="ssh"]').focus();
+}
 function initMachineWorkspace() {
   for (const tab of ['terminals','desktops']) {
     const section = $('#page-' + tab), panel = $('#machinePanel-' + tab);
@@ -163,7 +167,30 @@ function initMachineWorkspace() {
   $('#machineSearch').addEventListener('input', renderMachineDirectory);
   $('#machineEnvironment').addEventListener('change', renderMachineDirectory);
   $('#treeNewFolder').addEventListener('click', () => showFolderDialog());
-  $('#treeNewMachine').addEventListener('click', () => openAsset());
+  $('#treeNewMachine').addEventListener('click', openConnectionPicker);
+  $('#machineAddConnection').addEventListener('click', openConnectionPicker);
+  $('#connectionPickerClose').addEventListener('click',()=>$('#connectionPicker').close());
+  $('#connectionPickerCancel').addEventListener('click',()=>$('#connectionPicker').close());
+  $('#connectionPicker').addEventListener('click',event=>{
+    if(event.target===$('#connectionPicker'))$('#connectionPicker').close();
+  });
+  $$('[data-new-protocol]').forEach(control=>control.addEventListener('click',()=>{
+    const protocol=control.dataset.newProtocol;
+    $('#connectionPicker').close();
+    if(protocol==='ssh') {
+      openAsset();
+      const form=$('#assetForm');
+      if(state.machineHost){form.elements.host.value=state.machineHost;form.elements.label.value=machineTitle();}
+    } else {
+      openDesktopEditor();
+      $('#desktopProtocol').value=protocol;
+      const form=$('#desktopForm');
+      if(state.machineHost){form.elements.host.value=state.machineHost;form.elements.label.value=machineTitle();}
+      $('#desktopPort').value=protocol==='rdp'?'3389':protocol==='vnc'?'5900':'5901';
+      desktopProtocolChange();
+      $('#desktopProtocol').focus();
+    }
+  }));
   $('#machineInfoToggle').addEventListener('click', () => toggleMachineInfo());
   $('#machineInfoClose').addEventListener('click', () => toggleMachineInfo(false));
   let treeSearchDebounce;
@@ -513,6 +540,23 @@ function renderMachineSwitcher() {
     const quick=button(m.ssh.length?'SSH ↗':m.desktops.length?'Open ↗':'Select','tree-machine-quick',launch);
     quick.setAttribute('aria-label','Connect to '+title);
     row.append(item,quick);target.append(row);
+    if(m.host===state.machineHost){
+      const profiles=node('div','machine-profiles');
+      profiles.style.setProperty('--tree-level',String(level));
+      for(const a of m.ssh){
+        const action=button('SSH · '+(a.username||a.label||m.host),
+          'machine-profile',()=>connect(a.id).catch(showError));
+        action.title='SSH '+a.username+'@'+m.host+':'+(a.port||22);
+        profiles.append(action);
+      }
+      for(const d of m.desktops){
+        const action=button(d.protocol.toUpperCase()+' · '+d.label,
+          'machine-profile',()=>openDesktop(d).catch(showError));
+        action.title=d.protocol.toUpperCase()+' '+m.host+':'+d.port;
+        profiles.append(action);
+      }
+      if(profiles.children.length)target.append(profiles);
+    }
   };
   const count=(id,seen=new Set())=>{
     if(seen.has(id))return 0;seen.add(id);
@@ -625,7 +669,7 @@ function renderMachineOverview(){
     const empty=node('div','workbench-welcome');
     empty.append(node('div','workbench-empty-mark','⇄'),node('h2','','Your connections, one workspace.'),
       node('p','','Return to Machines and choose a system, or create your first connection.'));
-    empty.append(button('+ Add machine','action-primary',()=>openAsset()));target.append(empty);return;
+    empty.append(button('+ Add connection','action-primary',openConnectionPicker));target.append(empty);return;
   }
   const header=node('header','workbench-connection-heading'),copy=node('div');
   copy.append(node('h2','','Connect to '+machineTitle()),
@@ -646,8 +690,8 @@ function renderMachineOverview(){
     action.append(node('span','workbench-connect-symbol','▣'),label,node('span','workbench-connect-action','Open →'));
     list.append(action);
   }
-  if(!asset&&!desktops.length)list.append(node('div','context-empty','No connection profiles exist for this machine. Add SSH or remote desktop access.'));
-  target.append(list,node('div','workbench-connection-note','Choose a connection to open a session. Open sessions stay in the dock. Use Switch machine to jump to another system.'));
+  if(!asset&&!desktops.length)list.append(button('+ Add SSH, RDP, VNC or SPICE connection','action-quiet',openConnectionPicker));
+  target.append(list,node('div','workbench-connection-note','Select a protocol to connect. Open sessions remain accessible in the shared tab strip.'));
 }
 
 const SESSION_FOCUS_PREF = 'switchyard:session:focus:v1';
@@ -1842,7 +1886,7 @@ async function refreshDesktopGateway() {
 async function refreshDesktops() {
   // Never block host inventory on an independent gateway health check.
   desktopRecords = await api('/desktops');
-  renderDesktopList(); renderMachineDirectory();
+  renderDesktopList(); renderMachineDirectory();renderMachineSwitcher();
   if (state.machineHost) renderMachineOverview();
   void refreshDesktopGateway().catch(showError);
 }
