@@ -148,7 +148,7 @@ function initMachineWorkspace() {
   const vault = $('#page-vault');
   vault.classList.remove('page', 'hidden'); vault.classList.add('integration-section');
   $('#settingsIntegrationsPanel').append(vault);
-  for (const id of ['fileAsset','dockerAsset','healthAsset']) {
+  for (const id of ['fileAsset','dockerAsset','healthAsset','serviceAsset']) {
     const field = $('#' + id);
     field.closest('label')?.classList.add('machine-host-select');
     field.tabIndex = -1;
@@ -169,6 +169,10 @@ function initMachineWorkspace() {
   $('#treeNewFolder').addEventListener('click', () => showFolderDialog());
   $('#treeNewMachine').addEventListener('click', openConnectionPicker);
   $('#machineAddConnection').addEventListener('click', openConnectionPicker);
+  $$('[data-machine-tool]').forEach(control=>control.addEventListener('click',()=>{
+    openMachineTool(control.dataset.machineTool);
+    control.closest('details')?.removeAttribute('open');
+  }));
   $('#connectionPickerClose').addEventListener('click',()=>$('#connectionPicker').close());
   $('#connectionPickerCancel').addEventListener('click',()=>$('#connectionPicker').close());
   $('#connectionImportVV').addEventListener('click',()=>{
@@ -291,7 +295,36 @@ async function refreshUpdateJob() {
 function normalizedHost(host) { return String(host || '').trim().toLowerCase(); }
 function machineAsset() { return state.assets.find(a => normalizedHost(a.host) === state.machineHost); }
 function machineDesktops() { return desktopRecords.filter(d => normalizedHost(d.host) === state.machineHost); }
-function machineTitle() { return machineAsset()?.label || machineDesktops()[0]?.label || state.machineHost || 'Machine'; }
+function machineTitle() { return machineAsset()?.label || machineDesktops()[0]?.label ||
+  spiceBookmarks.find(b=>normalizedHost(b.node)===state.machineHost)?.label ||
+  state.machineHost || 'Machine'; }
+const MACHINE_TOOL_PAGES=new Set(['files','docker','services','health','runbooks']);
+function authenticatedSSHForHost(host=state.machineHost){
+  return [...state.tabs.values()].find(t=>normalizedHost(t.asset?.host)===normalizedHost(host)
+    && t.authenticated===true && t.ws?.readyState===WebSocket.OPEN) || null;
+}
+function syncMachineTools(){
+  const nav=$('#machineToolNavigation');if(!nav)return;
+  const connected=authenticatedSSHForHost();
+  const operatorPage=state.page==='machine'||MACHINE_TOOL_PAGES.has(state.page);
+  nav.hidden=!connected||!operatorPage;
+  if(!connected)return;
+  $('#machineToolsHost').textContent=machineTitle();
+  $('#machineToolsState').textContent='SSH connected · '+connected.asset.username+'@'+connected.asset.host;
+  for(const control of $$('[data-machine-tool]',nav)){
+    const active=control.dataset.machineTool===state.page;
+    control.classList.toggle('active',active);
+    if(active)control.setAttribute('aria-current','page');
+    else control.removeAttribute('aria-current');
+  }
+}
+function openMachineTool(page){
+  if(!MACHINE_TOOL_PAGES.has(page)&&page!=='machine')return;
+  if(!authenticatedSSHForHost()){
+    toast('Connect to this machine with SSH before opening remote management tools.',true);return;
+  }
+  navigate(page);
+}
 async function refreshFolders() {
   state.folders = await api('/folders');
   for (const select of [$('#assetFolder'),$('#folderParent')]) {
@@ -306,15 +339,20 @@ function machines() {
   const map = new Map();
   for (const a of state.assets) {
     const host = normalizedHost(a.host);
-    if (!map.has(host)) map.set(host, {host, ssh:[], desktops:[], folder_id:a.folder_id || ''});
+    if (!map.has(host)) map.set(host, {host, ssh:[], desktops:[], bookmarks:[], folder_id:a.folder_id || ''});
     map.get(host).ssh.push(a);
   }
   for (const d of desktopRecords) {
     const host = normalizedHost(d.host);
-    if (!map.has(host)) map.set(host, {host, ssh:[], desktops:[], folder_id:''});
+    if (!map.has(host)) map.set(host, {host, ssh:[], desktops:[], bookmarks:[], folder_id:''});
     map.get(host).desktops.push(d);
   }
-  return [...map.values()].sort((a,b) => (a.ssh[0]?.label || a.desktops[0]?.label || a.host).localeCompare(b.ssh[0]?.label || b.desktops[0]?.label || b.host));
+  for (const b of spiceBookmarks) {
+    const host=normalizedHost(b.node);
+    if(!map.has(host))map.set(host,{host,ssh:[],desktops:[],bookmarks:[],folder_id:''});
+    map.get(host).bookmarks.push(b);
+  }
+  return [...map.values()].sort((a,b) => (a.ssh[0]?.label || a.desktops[0]?.label || a.bookmarks[0]?.label || a.host).localeCompare(b.ssh[0]?.label || b.desktops[0]?.label || b.host));
 }
 function renderMachineDirectory() {
   // The old directory page was removed; never build an invisible second machine roster.
@@ -509,26 +547,24 @@ function renderMachineSwitcher() {
   const target=$('#machineSwitcher');if(!target)return;
   target.replaceChildren();
   const query=($('#machineSwitchSearch').value||'').trim().toLowerCase();
-  const all=machines().sort((a,b)=>(a.ssh[0]?.label||a.desktops[0]?.label||a.host).localeCompare((b.ssh[0]?.label||b.desktops[0]?.label||b.host),undefined,{numeric:true,sensitivity:'base'})),folders=state.folders,byId=new Map(folders.map(f=>[f.id,f]));
+  const all=machines().sort((a,b)=>(a.ssh[0]?.label||a.desktops[0]?.label||a.bookmarks[0]?.label||a.host).localeCompare((b.ssh[0]?.label||b.desktops[0]?.label||b.bookmarks[0]?.label||b.host),undefined,{numeric:true,sensitivity:'base'})),folders=state.folders,byId=new Map(folders.map(f=>[f.id,f]));
   $('#treeMachineCount').textContent=`${all.length} machine${all.length===1?'':'s'}`;
   const matches=all.filter(m=>{
     const chain=[];let f=byId.get(m.folder_id);const seen=new Set();
     while(f&&!seen.has(f.id)){seen.add(f.id);chain.push(f.name);f=byId.get(f.parent_id);}
-    return [m.host,m.ssh[0]?.label,m.desktops[0]?.label,...chain].join(' ').toLowerCase().includes(query);
+    return [m.host,m.ssh[0]?.label,m.desktops[0]?.label,...(m.bookmarks||[]).map(b=>b.label),...chain].join(' ').toLowerCase().includes(query);
   });
   const groups=new Map([['',[]],...folders.map(f=>[f.id,[]])]);
   for(const m of matches)(groups.get(m.folder_id)||groups.get('')).push(m);
   const renderMachine=(m,level)=>{
-    const title=m.ssh[0]?.label||m.desktops[0]?.label||m.host;
+    const title=m.ssh[0]?.label||m.desktops[0]?.label||m.bookmarks?.[0]?.label||m.host;
     const row=node('div','tree-machine-row');
     row.style.setProperty('--tree-level',String(level));
     const item=button('','tree-machine'+(m.host===state.machineHost?' active':''),()=>{
-      const toolView=['files','docker','services','health'].includes(state.page);
       openMachine(m.host);
-      if(!toolView){
-        if(m.ssh.length)connect(m.ssh[0].id).catch(showError);
-        else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);
-      }
+      if(m.ssh.length)connect(m.ssh[0].id).catch(showError);
+      else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);
+      else if(m.bookmarks?.length)triggerSpiceVVImport(m.bookmarks[0].id);
     });
     item.setAttribute('aria-label',`Select ${title}, ${m.host}`);item.title=`${title} · ${m.host}`;
     if(m.host===state.machineHost)item.setAttribute('aria-current','page');
@@ -536,11 +572,12 @@ function renderMachineSwitcher() {
       openMachine(m.host);
       if(m.ssh.length)connect(m.ssh[0].id).catch(showError);
       else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);
+      else if(m.bookmarks?.length)triggerSpiceVVImport(m.bookmarks[0].id);
     };
     // One click opens the connection; double-click needs no separate handler.
     const copy=node('span','tree-machine-copy');copy.append(node('strong','',title),node('small','mono',m.host));
     item.append(node('span','tree-machine-icon',m.ssh.length?'▣':'▤'),copy);
-    const quick=button(m.ssh.length?'SSH ↗':m.desktops.length?'Open ↗':'Select','tree-machine-quick',launch);
+    const quick=button(m.ssh.length?'SSH ↗':m.desktops.length?'Open ↗':m.bookmarks?.length?'SPICE ↗':'Select','tree-machine-quick',launch);
     quick.setAttribute('aria-label','Connect to '+title);
     row.append(item,quick);target.append(row);
     if(m.host===state.machineHost){
@@ -557,6 +594,22 @@ function renderMachineSwitcher() {
           'machine-profile',()=>openDesktop(d).catch(showError));
         action.title=d.protocol.toUpperCase()+' '+m.host+':'+d.port;
         profiles.append(action);
+      }
+      for(const bookmark of m.bookmarks||[]){
+        const group=node('div','machine-bookmark-profile');
+        const action=button('SPICE · '+bookmark.label,'machine-profile',()=>{
+          triggerSpiceVVImport(bookmark.id);
+        });
+        action.title='Select a newly exported .vv file to reconnect to '+bookmark.label;
+        const remove=button('×','machine-bookmark-remove',async()=>{
+          if(!await confirmAction('Remove console shortcut',
+            'Remove '+bookmark.label+' from SwitchYard? The Proxmox VM is unchanged.','Remove'))return;
+          await api('/desktops/spice/bookmarks/'+encodeURIComponent(bookmark.id),{method:'DELETE'});
+          await refreshSpiceBookmarks();
+          toast('Console shortcut removed.');
+        });
+        remove.title='Remove console shortcut';remove.setAttribute('aria-label','Remove '+bookmark.label+' shortcut');
+        group.append(action,remove);profiles.append(group);
       }
       if(profiles.children.length)target.append(profiles);
     }
@@ -644,12 +697,13 @@ function updateTerminalStatus() {
   const status = $('#machineTerminalStatus');
   if (!status) return;
   const sessions = [...state.tabs.values()].filter(t => normalizedHost(t.asset.host) === state.machineHost);
-  const connected = sessions.filter(t => t.ws?.readyState === WebSocket.OPEN).length;
+  const connected = sessions.filter(t => t.authenticated && t.ws?.readyState === WebSocket.OPEN).length;
   const connecting = sessions.filter(t => t.ws?.readyState === WebSocket.CONNECTING).length;
   status.className = connected ? 'session-state connected' : connecting ? 'session-state connecting' : 'session-state';
   status.textContent = connected ? `${connected} connected` : connecting ? 'Connecting…' : sessions.length ? 'Disconnected' : 'No session';
   const connect = $('#machineTerminalConnect');
   if (connect) connect.textContent = connected || connecting ? 'New session ↗' : sessions.some(t=>t.authFailed) ? 'Retry with password ↗' : sessions.length ? 'Reconnect ↗' : 'Connect via SSH ↗';
+  syncMachineTools();
 }
 
 function openMachine(host){
@@ -662,14 +716,12 @@ function openMachine(host){
   $('#filePath').value='.';
   state.currentTab=[...state.tabs.keys()].find(id=>normalizedHost(state.tabs.get(id).asset.host)===state.machineHost)||null;
   updateMachineHeader();renderTabs();renderMachineOverview();renderDesktopList();renderMachineSwitcher();
-  if(['files','docker','services','health'].includes(state.page)) {
-    navigate(state.page);
-  } else {
-    navigate('machine');machineTab(state.currentTab?'terminals':'overview');
-  }
+  navigate('machine');machineTab(state.currentTab?'terminals':'overview');
 }
 function renderMachineOverview(){
-  const asset=machineAsset(),desktops=machineDesktops(),target=$('#machineOverviewContent');target.replaceChildren();
+  const asset=machineAsset(),desktops=machineDesktops(),
+    bookmarks=spiceBookmarks.filter(b=>normalizedHost(b.node)===state.machineHost),
+    target=$('#machineOverviewContent');target.replaceChildren();
   if(!state.machineHost){
     const empty=node('div','workbench-welcome');
     empty.append(node('div','workbench-empty-mark','⇄'),node('h2','','Your connections, one workspace.'),
@@ -695,7 +747,15 @@ function renderMachineOverview(){
     action.append(node('span','workbench-connect-symbol','▣'),label,node('span','workbench-connect-action','Open →'));
     list.append(action);
   }
-  if(!asset&&!desktops.length)list.append(button('+ Add SSH, RDP, VNC or SPICE connection','action-quiet',openConnectionPicker));
+  for(const bookmark of bookmarks){
+    const action=button('','workbench-connect-row',()=>triggerSpiceVVImport(bookmark.id));
+    const label=node('span','workbench-connect-copy');
+    label.append(node('strong','','SPICE · '+bookmark.label),
+      node('small','','Saved Proxmox console · select a fresh .vv file to reconnect'));
+    action.append(node('span','workbench-connect-symbol','▣'),label,node('span','workbench-connect-action','Import fresh .vv →'));
+    list.append(action);
+  }
+  if(!asset&&!desktops.length&&!bookmarks.length)list.append(button('+ Add SSH, RDP, VNC or SPICE connection','action-quiet',openConnectionPicker));
   target.append(list,node('div','workbench-connection-note','Select a protocol to connect. Open sessions remain accessible in the shared tab strip.'));
 }
 
@@ -719,6 +779,7 @@ function syncWorkspaceChrome() {
   $('#shell').classList.toggle('workbench-open',workspace);
   $('#shell').classList.toggle('session-focus',focused);
   $('#shell').classList.toggle('two-pane-workbench',workspace);
+  syncMachineTools();
   $('#machineLayout').classList.toggle('session-dock-open',state.sessionDockOpen === true);
   const focusToggle=$('#workbenchFocusToggle');
   focusToggle.disabled = !session;
@@ -769,7 +830,7 @@ async function setShell() {
   $('#setup').classList.add('hidden'); $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   // Fetch independent inventory sources concurrently instead of serial startup roundtrips.
   navigate('machine');
-  await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops()]);
+  await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops(), refreshSpiceBookmarks()]);
   state.machineHost = machines()[0]?.host || null;
   updateMachineHeader();renderMachineOverview();renderDesktopList();
   navigate('machine');machineTab('overview');
@@ -791,6 +852,11 @@ function navigate(page) {
   if (page === 'vault') { navigate('settings'); settingsTab('integrations'); return; }
   // Machines is always the two-pane workbench. There is no directory landing route.
   if (page === 'machines') page = 'machine';
+  if(MACHINE_TOOL_PAGES.has(page)&&!authenticatedSSHForHost()){
+    toast('A connected SSH session is required for tools on this machine.',true);
+    if(MACHINE_TOOL_PAGES.has(state.page))navigate('machine');
+    return;
+  }
   if (['terminals','desktops'].includes(page)) {
     if (!state.machineHost) {navigate('machine');machineTab('overview');return;}
     navigate('machine'); machineTab(page); return;
@@ -1008,6 +1074,7 @@ async function connect(aid, {newSession = false} = {}) {
     if(state.tabs.size===2&&!state.sessionDockDismissed)state.sessionDockOpen=true;
   } else {
     tab.asset = asset;
+    tab.authenticated=false;
     tab.terminal.writeln('\r\n\x1b[90m[Reconnecting this terminal]\x1b[0m');
   }
   state.currentTab = tab.id;
@@ -1025,6 +1092,7 @@ async function connect(aid, {newSession = false} = {}) {
     renderTabs();updateTerminalStatus();return tab.id;
   }
   tab.ws=ws;
+  tab.authenticated=false;
   tab.reportedServerError=false;
   tab.terminal.writeln('\r\nSwitchyard · connecting to '+asset.host);
   renderTabs();updateTerminalStatus();
@@ -1044,9 +1112,11 @@ async function connect(aid, {newSession = false} = {}) {
       if(message.type==='connected') {
         state.failedAuthAssets?.delete(String(asset.id));
         tab.authFailed=false;
+        tab.authenticated=true;
         updateTerminalStatus();
       } else if(message.type==='data')tab.terminal.write(message.data);
       else if(message.type==='error'){
+        tab.authenticated=false;
         tab.reportedServerError=true;
         const detail=typeof message.message==='string'?message.message:'SSH connection failed';
         const untrusted=message.code==='ssh_host_unknown'||detail.startsWith('SSH host is not trusted');
@@ -1088,7 +1158,9 @@ async function connect(aid, {newSession = false} = {}) {
   };
   ws.onclose=()=>{
     if(tab.ws!==ws)return;
-    password=null;
+    password=null;tab.authenticated=false;
+    if(MACHINE_TOOL_PAGES.has(state.page)&&normalizedHost(asset.host)===state.machineHost
+      && !authenticatedSSHForHost())navigate('machine');
     tab.terminal.writeln(tab.authFailed ? '\r\n\x1b[90m[Disconnected — reconnect to enter a different password]\x1b[0m' : '\r\n\x1b[90m[Disconnected — reconnect will reuse this tab]\x1b[0m');
     renderTabs();updateTerminalStatus();
   };
@@ -1170,7 +1242,10 @@ function applyTerminalLayout() {
 function selectTab(id) { state.currentTab = id; const host = state.tabs.get(id)?.asset?.host; if (host) state.machineHost = normalizedHost(host); updateMachineHeader(); renderMachineSwitcher(); navigate('terminals'); renderTabs(); requestAnimationFrame(() => { const t = state.tabs.get(id); if (t) { t.fit.fit(); t.terminal.focus(); } }); }
 function closeTab(id) {
   const t=state.tabs.get(id);if(!t)return;
+  t.authenticated=false;
   t.ws?.close();t.terminal.dispose();state.tabs.delete(id);
+  if(MACHINE_TOOL_PAGES.has(state.page)&&normalizedHost(t.asset.host)===state.machineHost
+    && !authenticatedSSHForHost())navigate('machine');
   $('#term-'+id)?.remove();
   state.layoutSessionIds=(state.layoutSessionIds||[]).filter(key=>key!==id);
   if(state.tabs.size<2){state.terminalLayout=1;state.layoutSessionIds=[];}
@@ -2053,7 +2128,9 @@ async function refreshRunbooks() {
     info.append(node('strong', '', item.name), node('small', '', item.description || 'No description'));
     const select = node('select'); select.setAttribute('aria-label', 'Execution target for ' + item.name);
     select.append(node('option', '', 'Choose host'));
-    for (const a of state.assets) { const opt = node('option', '', a.label + ' · ' + a.host); opt.value = a.id; select.append(opt); }
+    const a=machineAsset();
+    if(a){const opt=node('option','',a.label+' · '+a.host);opt.value=a.id;select.append(opt);select.value=a.id;}
+    select.disabled=true;
     const controls = node('div', 'file-tools');
     controls.append(button('Run', 'mini-btn', safeAsync(() => executeRunbook(item, select))),
       button('Edit', 'mini-btn', () => editRunbook(item)),
