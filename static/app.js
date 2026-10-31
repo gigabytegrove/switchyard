@@ -119,6 +119,21 @@ async function promptCredential(asset, {force=false}={}) {
   return password;
 }
 
+// Mount the directory outside the connection page so every tool keeps machine context.
+function mountOperatorShell() {
+  const body=$('#shell .body-pane'),layout=$('#machineLayout');
+  if(!body || body.classList.contains('operator-shell'))return;
+  const rail=layout.querySelector('.machine-context');
+  const resize=$('#machineRailResize');
+  const sessions=layout.querySelector('.workbench-session-dock');
+  body.insertBefore(rail,body.firstChild);
+  body.insertBefore(resize,rail.nextSibling);
+  body.insertBefore(sessions,resize.nextSibling);
+  body.classList.add('operator-shell');
+  body.classList.toggle('tree-open',layout.classList.contains('tree-open'));
+  const width=layout.style.getPropertyValue('--wb-rail');
+  if(width)body.style.setProperty('--wb-rail',width);
+}
 function initMachineWorkspace() {
   for (const tab of ['terminals','desktops']) {
     const section = $('#page-' + tab), panel = $('#machinePanel-' + tab);
@@ -355,21 +370,23 @@ function setFolderFolded(id,folded){
 function setMachineTreeOpen(open){
   const expanded=!!open;
   $('#machineLayout').classList.toggle('tree-open',expanded);
+  $('#shell .body-pane')?.classList.toggle('tree-open',expanded);
   $('#treeClose').setAttribute('aria-label',expanded?'Collapse Machines panel':'Expand Machines panel');
   $('#machineTreeToggle').setAttribute('aria-expanded',String(expanded));
   $('#machineTreeToggle').setAttribute('aria-label',expanded?'Hide machine directory':'Show machine directory');
 }
 function focusMachineSearch(){
   if($('#shell').classList.contains('hidden'))return;
-  navigate('machine');
   setMachineTreeOpen(true);
   const field=$('#machineSwitchSearch');field.focus();field.select();
 }
 function initMachineRail(){
   const layout=$('#machineLayout'),handle=$('#machineRailResize'),field=$('#machineSwitchSearch');
+  const body=$('#shell .body-pane')||layout;
   function applyWidth(pixels,persist=true){
     const value=Math.max(196,Math.min(440,Math.round(pixels)));
     layout.style.setProperty('--wb-rail',value+'px');
+    body.style.setProperty('--wb-rail',value+'px');
     handle.setAttribute('aria-valuenow',String(value));
     if(persist)saveUiPreference(TREE_WIDTH_KEY,value);
   }
@@ -382,7 +399,7 @@ function initMachineRail(){
     layout.classList.add('rail-resizing');event.preventDefault();
   });
   handle.addEventListener('pointermove',event=>{
-    if(resizing)applyWidth(event.clientX-layout.getBoundingClientRect().left);
+    if(resizing)applyWidth(event.clientX-body.getBoundingClientRect().left);
   });
   function finish(event){
     if(!resizing)return;resizing=false;layout.classList.remove('rail-resizing');
@@ -406,11 +423,11 @@ function initMachineRail(){
     const next=!layout.classList.contains('tree-open');
     setMachineTreeOpen(next);if(next)field.focus();
   });
-  layout.addEventListener('click',event=>{
-    if(layout.classList.contains('tree-open')&&event.target===layout)setMachineTreeOpen(false);
+  body.addEventListener('click',event=>{
+    if(window.matchMedia('(max-width:760px)').matches && layout.classList.contains('tree-open') && event.target===body)setMachineTreeOpen(false);
   });
   window.addEventListener('keydown',event=>{
-    if(event.key==='Escape'&&layout.classList.contains('tree-open')){
+    if(event.key==='Escape'&&layout.classList.contains('tree-open')&&window.matchMedia('(max-width:760px)').matches){
       setMachineTreeOpen(false);$('#machineTreeToggle').focus();return;
     }
     // Never steal Ctrl+K from SSH terminals (readline kill-line), RDP/VNC,
@@ -476,9 +493,12 @@ function renderMachineSwitcher() {
     const row=node('div','tree-machine-row');
     row.style.setProperty('--tree-level',String(level));
     const item=button('','tree-machine'+(m.host===state.machineHost?' active':''),()=>{
+      const toolView=['files','docker','services','health'].includes(state.page);
       openMachine(m.host);
-      if(m.ssh.length)connect(m.ssh[0].id).catch(showError);
-      else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);
+      if(!toolView){
+        if(m.ssh.length)connect(m.ssh[0].id).catch(showError);
+        else if(m.desktops.length)openDesktop(m.desktops[0]).catch(showError);
+      }
     });
     item.setAttribute('aria-label',`Select ${title}, ${m.host}`);item.title=`${title} · ${m.host}`;
     if(m.host===state.machineHost)item.setAttribute('aria-current','page');
@@ -541,7 +561,8 @@ function renderWorkbenchSessions() {
   const nav=$('#workbenchSessions');if(!nav)return;nav.replaceChildren();
   const dockToggle=$('#workbenchSessionsToggle');
   if (dockToggle) dockToggle.textContent=state.sessionDockOpen?'Hide tabs':'Tabs ('+(state.tabs.size+desktopTabs.size)+')';
-  const home=button('⌂  Connections','workbench-session-tab'+(state.machineTab==='overview'?' active':''),()=>machineTab('overview'));
+  $('#shell .body-pane')?.classList.toggle('has-sessions',state.tabs.size+desktopTabs.size>0);
+  const home=button('⌂ Connections','workbench-session-tab'+(state.page==='machine'&&state.machineTab==='overview'?' active':''),()=>{navigate('machine');machineTab('overview');});
   home.setAttribute('role','tab');home.setAttribute('aria-selected',String(state.machineTab==='overview'));nav.append(home);
   for(const [id,session] of state.tabs){
     const wrap=node('div','workbench-session-item'),active=state.machineTab==='terminals'&&state.currentTab===id;
@@ -592,7 +613,11 @@ function openMachine(host){
   $('#filePath').value='.';
   state.currentTab=[...state.tabs.keys()].find(id=>normalizedHost(state.tabs.get(id).asset.host)===state.machineHost)||null;
   updateMachineHeader();renderTabs();renderMachineOverview();renderDesktopList();renderMachineSwitcher();
-  navigate('machine');machineTab(state.currentTab?'terminals':'overview');
+  if(['files','docker','services','health'].includes(state.page)) {
+    navigate(state.page);
+  } else {
+    navigate('machine');machineTab(state.currentTab?'terminals':'overview');
+  }
 }
 function renderMachineOverview(){
   const asset=machineAsset(),desktops=machineDesktops(),target=$('#machineOverviewContent');target.replaceChildren();
@@ -728,6 +753,7 @@ function navigate(page) {
   $$('.page').forEach(el => el.classList.toggle('hidden', el.id !== 'page-' + page));
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.page === page || (page === 'machine' && el.dataset.page === 'machines')));
   if (page === 'machine') {updateMachineHeader();renderWorkbenchSessions();}
+  $('#shell .body-pane')?.classList.toggle('active-machine-tool',['machine','files','docker','services','health'].includes(page));
   syncWorkspaceChrome();
   $('#bread').textContent = ({ machine:'Machine / ' + machineTitle(), machines:'Machines', overview: 'Overview', assets: 'Assets', terminals: 'Terminals', files: 'File transfer', docker: 'Docker', health: 'Host health', services: 'System services', runbooks: 'Runbooks', desktops: 'Remote desktops', vault: 'Vaultwarden', keys: 'SSH keys', trust: 'Host trust', activity: 'Audit trail', settings: 'Settings' })[page];
   if (page === 'desktops') { refreshDesktops().catch(showError); refreshDesktopHistory().catch(showError); refreshDesktopActive().catch(showError); fitDesktop(desktopCurrent()); }
@@ -1068,13 +1094,14 @@ function terminalLayoutSelection() {
   const primary=state.currentTab&&state.tabs.has(state.currentTab)?state.currentTab:newest[0];
   let result=(state.layoutSessionIds||[]).filter(id=>state.tabs.has(id));
   if(!result.includes(primary)) {
-    if(result.length>=count)result[result.length-1]=primary;
+    if(result.length>=count)result[count-1]=primary;
     else result.push(primary);
   }
   for(const id of newest) {
     if(result.length>=count)break;
     if(!result.includes(id))result.push(id);
   }
+  if(result.indexOf(primary)>=count){result=[...result.slice(0,count-1),primary];}
   state.layoutSessionIds=result.slice(0,count);
   return state.layoutSessionIds;
 }
@@ -2199,11 +2226,12 @@ async function bootstrap() {
 function safeAsync(fn) { return event => { Promise.resolve(fn(event)).catch(showError); }; }
 function bind() {
   state.focusPreferred=readUiPreference(SESSION_FOCUS_PREF,true)!==false;
-  state.sessionDockOpen=false;
+  state.sessionDockOpen=true;
   state.terminalLayout=1;
   state.layoutSessionIds=[];
   state.sessionDockDismissed=false;
   initMachineWorkspace();
+  mountOperatorShell();
   bindDesktopUI();
   $('#clock').textContent = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   $('#setupBack').addEventListener('click', () => showSetupStep(Math.max(0, setupStep - 1)));
