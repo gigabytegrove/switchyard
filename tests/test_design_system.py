@@ -8,9 +8,9 @@ CSS=(ROOT/'static/style.css').read_text()
 JS=(ROOT/'static/app.js').read_text()
 
 def test_restored_brand_and_versioned_assets():
-    assert 'href="/static/style.css?v=0.5.10-dev.1"' in HTML
-    assert 'src="/static/app.js?v=0.5.10-dev.1"' in HTML
-    assert '0.5.10-dev.1' in HTML
+    assert 'href="/static/style.css?v=0.5.11-dev.1"' in HTML
+    assert 'src="/static/app.js?v=0.5.11-dev.1"' in HTML
+    assert '0.5.11-dev.1' in HTML
     assert 'src="/static/switchyard-mark.webp"' in HTML
     assert 'station-monogram' not in HTML
     assert '--sw-logo-red:#bc293a' in CSS

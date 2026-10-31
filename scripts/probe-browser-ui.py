@@ -170,7 +170,7 @@ def run():
                 assert cdp.eval("""(function(){
                   return getComputedStyle(document.querySelector('.station-header')).backgroundColor==='rgb(39, 39, 43)' &&
                     !!document.querySelector('.station-brand-mark[src="/static/switchyard-mark.webp"]') &&
-                    document.getElementById('stationVersion').textContent.includes('0.5.10-dev.1') &&
+                    document.getElementById('stationVersion').textContent.includes('0.5.11-dev.1') &&
                     !document.getElementById('page-machines') &&
                     !document.querySelector('.directory-hero');
                 })()"""), "wrong version, branding, or obsolete landing page"
@@ -270,7 +270,8 @@ def run():
                   const oldHost=state.machineHost;
                   state.machineHost=null;selector.value='';
                   navigate('files');
-                  const valid=document.querySelector('#page-files:not(.hidden)') &&
+                  const valid=document.querySelector('#page-machine:not(.hidden)') &&
+                    document.getElementById('machineToolNavigation').hidden &&
                     document.querySelector('.explorer-body') &&
                     document.querySelector('#fileFolderTree') &&
                     document.querySelector('#fileList') &&
@@ -314,6 +315,19 @@ def run():
                   terminal.write('SwitchYard focus viewport layout acceptance\\r\\n');
                   return true;
                 })()"""), "xterm layout probe could not be constructed"
+                assert cdp.eval("""(function(){
+                  const tab=state.tabs.get('layout-probe');
+                  tab.ws={readyState:WebSocket.OPEN,send(){}};
+                  tab.authenticated=true;syncMachineTools();
+                  if(document.getElementById('machineToolNavigation').hidden)return false;
+                  navigate('runbooks');
+                  const valid=!!document.querySelector('#page-runbooks:not(.hidden)') &&
+                    !document.getElementById('machineToolNavigation').hidden &&
+                    !!document.querySelector('.body-pane.operator-shell > .machine-context');
+                  navigate('machine');machineTab('terminals');
+                  tab.authenticated=false;tab.ws=null;syncMachineTools();
+                  return valid && document.getElementById('machineToolNavigation').hidden;
+                })()"""), "machine-scoped tools failed live/disconnected context transitions"
                 cdp.until("""document.getElementById('shell').classList.contains('session-focus') &&
                   !!document.querySelector('#machinePanel-terminals:not(.hidden) .xterm-screen')""",
                           "default focused terminal")

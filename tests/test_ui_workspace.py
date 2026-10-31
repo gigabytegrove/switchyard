@@ -44,7 +44,17 @@ def test_left_machines_right_connection_no_landing():
 def test_workspace_routes_are_preserved():
     for page in ('files','docker','services','health','runbooks','activity','trust','settings'):
         assert f'id="page-{page}"' in HTML
-        assert f'data-page="{page}"' in HTML
+        if page in ('files','docker','services','health','runbooks'):
+            assert f'data-machine-tool="{page}"' in HTML
+        else:
+            assert f'data-page="{page}"' in HTML
+    assert '<nav id="machineToolNavigation"' in HTML
+    assert 'id="spiceSaveBookmark"' in HTML
+    assert 'id="machineToolsHost"' in HTML
+    assert 'id="navigation"' in HTML
+    assert 'data-page="files"' not in HTML
+    assert 'data-page="docker"' not in HTML
+    assert 'data-page="services"' not in HTML
     assert 'id="sshExport"' in HTML
     assert 'id="sshImport"' in HTML
     assert 'function renderWorkbenchSessions()' in JS
@@ -67,6 +77,6 @@ def test_accessibility_and_responsive_behaviors():
 
 def test_data_integrity():
     compose=(ROOT/'compose.yaml').read_text()
-    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.10-dev.1' in compose
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.11-dev.1' in compose
     assert 'container_name:' not in compose
     assert '/var/run/docker.sock' not in compose
