@@ -1160,7 +1160,7 @@ async function connect(aid, {newSession = false} = {}) {
   ws.onclose=()=>{
     if(tab.ws!==ws)return;
     password=null;tab.authenticated=false;
-    if(MACHINE_TOOL_PAGES.has(state.page)&&normalizedHost(asset.host)===state.machineHost
+    if(['files','docker','services','health','runbooks'].includes(state.page)&&normalizedHost(asset.host)===state.machineHost
       && !authenticatedSSHForHost())navigate('machine');
     tab.terminal.writeln(tab.authFailed ? '\r\n\x1b[90m[Disconnected — reconnect to enter a different password]\x1b[0m' : '\r\n\x1b[90m[Disconnected — reconnect will reuse this tab]\x1b[0m');
     renderTabs();updateTerminalStatus();
@@ -1245,7 +1245,7 @@ function closeTab(id) {
   const t=state.tabs.get(id);if(!t)return;
   t.authenticated=false;
   t.ws?.close();t.terminal.dispose();state.tabs.delete(id);
-  if(MACHINE_TOOL_PAGES.has(state.page)&&normalizedHost(t.asset.host)===state.machineHost
+  if(['files','docker','services','health','runbooks'].includes(state.page)&&normalizedHost(t.asset.host)===state.machineHost
     && !authenticatedSSHForHost())navigate('machine');
   $('#term-'+id)?.remove();
   state.layoutSessionIds=(state.layoutSessionIds||[]).filter(key=>key!==id);
