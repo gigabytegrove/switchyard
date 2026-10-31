@@ -724,14 +724,15 @@ function renderMachineOverview(){
     bookmarks=spiceBookmarks.filter(b=>normalizedHost(b.node)===state.machineHost),
     target=$('#machineOverviewContent');target.replaceChildren();
   if(!state.machineHost){
-    const empty=node('div','workbench-welcome');
-    empty.append(node('div','workbench-empty-mark','⇄'),node('h2','','Your connections, one workspace.'),
-      node('p','','Return to Machines and choose a system, or create your first connection.'));
-    empty.append(button('+ Add connection','action-primary',openConnectionPicker));target.append(empty);return;
+    const empty=node('div','workbench-idle');
+    empty.append(node('h2','','Choose a machine'),
+      node('p','','Select a machine in the left directory to open its saved SSH, RDP, VNC or SPICE connections.'));
+    empty.append(button('+ Add connection','action-primary',openConnectionPicker));
+    target.append(empty);return;
   }
   const header=node('header','workbench-connection-heading'),copy=node('div');
-  copy.append(node('h2','','Connect to '+machineTitle()),
-    node('p','',`${state.machineHost} · Choose an available protocol to open a session.`));
+  copy.append(node('h2','','Available connections'),
+    node('p','',`${machineTitle()} · ${state.machineHost}`));
   header.append(copy);target.append(header);
   const list=node('div','workbench-connections');
   if(asset){
@@ -784,6 +785,9 @@ function syncWorkspaceChrome() {
   $('#machineLayout').classList.toggle('session-dock-open',state.sessionDockOpen === true);
   const focusToggle=$('#workbenchFocusToggle');
   focusToggle.disabled = !session;
+  focusToggle.classList.toggle('hidden',!session);
+  $('#terminalLayoutMode').classList.toggle('hidden',!(session && state.machineTab==='terminals'));
+  $('#machineCommandMenu').classList.toggle('hidden',!state.machineHost);
   focusToggle.setAttribute('aria-pressed',String(focused));
   focusToggle.textContent=focused?'Controls':'Focus';
   focusToggle.setAttribute('aria-label',focused?'Show full controls':'Focus session view');
