@@ -296,6 +296,59 @@ def test_spice_vv_import_is_ephemeral_and_requires_auth(client):
         with pytest.raises(ValueError): parse_virt_viewer(bad)
 
 
+
+def test_spice_vv_bookmarks_save_only_non_secret_identity_and_require_fresh_matching_ticket(client):
+    assert client.get('/api/desktops/spice/bookmarks').status_code == 401
+    login(client)
+    def file(ticket, title='VM 9909 - winserver25'):
+        return ('[virt-viewer]\\ntype=spice\\ntitle='+title+
+                '\\nhost=pvespiceproxy:'+ticket+
+                '\\nproxy=http://pve.example.net:3128\\ntls-port=61000'+
+                '\\nhost-subject=O=Proxmox,CN=pve.example.net'+
+                '\\npassword=SINGLE-USE-SECRET-'+ticket+'\\n')
+    initial = mutation(client, 'post','/api/desktops/spice/import-vv',
+        json={'contents':file('ticket-1'), 'save_bookmark':True})
+    assert initial.status_code == 200, initial.text
+    info = initial.json()
+    assert info['node'] == 'pve.example.net'
+    assert info['bookmark']['label'] == 'VM 9909 - winserver25'
+    bookmark_id = info['bookmark']['id']
+    assert info['spice_password'] == 'SINGLE-USE-SECRET-ticket-1'
+    shortcuts = client.get('/api/desktops/spice/bookmarks').json()
+    assert len(shortcuts) == 1 and shortcuts[0]['id'] == bookmark_id
+    assert 'password' not in str(shortcuts).lower()
+    assert 'ticket-1' not in str(shortcuts)
+    assert 'pvespiceproxy' not in str(shortcuts)
+    assert 'SINGLE-USE-SECRET' not in str(shortcuts)
+    persisted = [tuple(row) for row in m.connection().execute(
+        'SELECT id,label,node,created_at FROM spice_vv_bookmarks')]
+    assert len(persisted) == 1 and 'ticket-1' not in str(persisted)
+    assert client.get('/api/desktops').json() == []
+
+    again = mutation(client, 'post','/api/desktops/spice/import-vv',
+        json={'contents':file('ticket-2'), 'bookmark_id':bookmark_id})
+    assert again.status_code == 200, again.text
+    assert again.json()['bookmark']['id'] == bookmark_id
+    assert again.json()['ticket'] != info['ticket']
+    assert again.json()['spice_password'] == 'SINGLE-USE-SECRET-ticket-2'
+
+    wrong = mutation(client, 'post','/api/desktops/spice/import-vv',
+        json={'contents':file('ticket-3','Different VM'),
+              'bookmark_id':bookmark_id})
+    assert wrong.status_code == 409
+    unknown = mutation(client, 'post','/api/desktops/spice/import-vv',
+        json={'contents':file('ticket-4'),'bookmark_id':'missing'})
+    assert unknown.status_code == 404
+    assert len(client.get('/api/desktops/spice/bookmarks').json()) == 1
+
+    remove = mutation(client, 'delete',
+        '/api/desktops/spice/bookmarks/'+bookmark_id)
+    assert remove.status_code == 200
+    assert client.get('/api/desktops/spice/bookmarks').json() == []
+    assert mutation(client, 'delete',
+        '/api/desktops/spice/bookmarks/'+bookmark_id).status_code == 404
+
+
 def test_spice_proxmox_vv_proxy_and_tls_parse():
     from app.spice import parse_virt_viewer, proxy_endpoint
     vv='''[virt-viewer]
