@@ -170,7 +170,7 @@ def run():
                 assert cdp.eval("""(function(){
                   return getComputedStyle(document.querySelector('.station-header')).backgroundColor==='rgb(39, 39, 43)' &&
                     !!document.querySelector('.station-brand-mark[src="/static/switchyard-mark.webp"]') &&
-                    document.getElementById('stationVersion').textContent.includes('0.5.11-dev.1') &&
+                    document.getElementById('stationVersion').textContent.includes('0.5.11-dev.2') &&
                     !document.getElementById('page-machines') &&
                     !document.querySelector('.directory-hero');
                 })()"""), "wrong version, branding, or obsolete landing page"

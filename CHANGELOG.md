@@ -1,3 +1,10 @@
+## 0.5.11-dev.2 (2026-10-31)
+
+- Replaced the oversized no-machine hero with a compact operational empty state.
+- Normalized available-connection list heading, rows and responsive spacing.
+- Hid terminal focus and layout controls until relevant; hid machine actions without a selected host.
+- Inspected real CI Chrome screenshots after the preceding release and corrected the observed density problems.
+
 ## 0.5.11-dev.1 (2026-10-31)
 
 - Moved Files, Containers, Services, Health and Runbooks into a per-machine toolbar shown only for an authenticated live SSH connection; uncluttered the global navigation.

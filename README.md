@@ -1,3 +1,7 @@
+### 0.5.11-dev.2 — workspace polish
+
+Connection workspace empty states and available-connection lists use compact, task-focused typography on desktop and mobile. Terminal layout, focus and machine action controls are hidden when inapplicable, rather than remaining as disabled or decorative furniture.
+
 ## Machine-scoped operations (0.5.11-dev.1)
 
 The top navigation now contains Machines and administration only. Files, Containers, Services, Health and Runbooks are exposed in a secondary toolbar **only after an SSH session to the currently selected machine reports successful authentication**. Switching machines returns to the connection workspace; connected SSH sessions and other machine sessions are preserved. Runbook execution targets the active SSH machine, and SSH-only tools are not offered on RDP/VNC/SPICE-only sessions. Audit, host trust, keys, Settings and inventory export/import remain administration-level functions.
