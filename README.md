@@ -1,3 +1,7 @@
+## Unified operator shell — 0.5.10-dev.1
+
+The Machines panel is part of the application shell across SSH, RDP, VNC, SPICE, Files (SFTP), Docker, systemd Services, and Health. New Connection presents SSH/RDP/VNC/SPICE choices, with each protocol using its existing authenticated backend. The SFTP Files tool now uses a desktop-style explorer with path breadcrumbs, folder navigation, sorting, multiselection, context menus, and server-side copy/move where supported. Filesystem access requires SSH/SFTP on the selected host; remote desktop protocols alone do not provide filesystem access. Existing persistent data remains unchanged; the release replaces application UI assets and includes no database migration.
+
 <div align="center">
 
 # Switchyard
@@ -18,7 +22,7 @@ Self-hosted machine profiles with SSH, SFTP, Docker, Linux health, and remote de
 
 > **Development build, not production-certified.** Source tests and selected deployment contracts can pass without proving live SSH/RDP/VNC/SPICE connectivity or complete hypervisor/OS compatibility. Restrict the host TCP 9791 port to your LAN, and do not expose it directly to the public Internet.
 
-## Operations desk redesign — 0.5.9-dev.1
+## Operations desk redesign — 0.5.10-dev.1
 
 Switchyard now uses a new control-room interface rather than its accumulated header/rail layouts. The design is intentionally a warm-white, silver and graphite technical workbench with signal-red actions. The rebuilt command rail keeps all operational tools visible; the searchable machine rack is resizable on desktop and becomes a drawer on small screens; SSH and remote desktop sessions occupy a dedicated uninterrupted stage with persistent session tabs. Machine maintenance actions are grouped into an accessible Actions menu rather than crowding the connection toolbar. The new navigation search control opens the machine rack and focuses its search field. Browser preferences remain local and all saved configuration stays in the existing Docker volume.
 

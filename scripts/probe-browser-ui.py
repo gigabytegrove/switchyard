@@ -170,7 +170,7 @@ def run():
                 assert cdp.eval("""(function(){
                   return getComputedStyle(document.querySelector('.station-header')).backgroundColor==='rgb(39, 39, 43)' &&
                     !!document.querySelector('.station-brand-mark[src="/static/switchyard-mark.webp"]') &&
-                    document.getElementById('stationVersion').textContent.includes('0.5.9-dev.1') &&
+                    document.getElementById('stationVersion').textContent.includes('0.5.10-dev.1') &&
                     !document.getElementById('page-machines') &&
                     !document.querySelector('.directory-hero');
                 })()"""), "wrong version, branding, or obsolete landing page"
@@ -261,6 +261,34 @@ def run():
                 cdp.call("Emulation.setDeviceMetricsOverride",
                          width=1440,height=900,deviceScaleFactor=1,mobile=False)
                 cdp.eval("setMachineTreeOpen(true)")
+                # The machine rail must survive switching to the real file and
+                # container views, without a second stand-alone application.
+                assert cdp.eval("""(function(){
+                  const rail=document.querySelector('.body-pane.operator-shell > .machine-context');
+                  const selector=document.getElementById('fileAsset');
+                  const old=selector.value;
+                  selector.value='';
+                  navigate('files');
+                  const valid=document.querySelector('#page-files:not(.hidden)') &&
+                    document.querySelector('.explorer-body') &&
+                    document.querySelector('#fileFolderTree') &&
+                    document.querySelector('#fileList') &&
+                    document.querySelector('#fileContextMenu') &&
+                    rail&&rail.getBoundingClientRect().width>=196;
+                  navigate('machine');selector.value=old;
+                  return !!valid;
+                })()"""), "SFTP file manager did not reuse persistent machine rail"
+                assert cdp.eval("""(function(){
+                  document.getElementById('machineAddConnection').click();
+                  const picker=document.getElementById('connectionPicker');
+                  if(!picker.open)return false;
+                  picker.querySelector('[data-new-protocol="vnc"]').click();
+                  const ready=document.getElementById('desktopDialog').open &&
+                    document.getElementById('desktopProtocol').value==='vnc' &&
+                    document.getElementById('desktopPort').value==='5900';
+                  document.getElementById('desktopDialog').close();
+                  return ready;
+                })()"""), "RDP/VNC/SPICE connection creation is not discoverable"
                 # A genuine xterm canvas, without connecting to any external
                 # SSH machine. This checks layout/fit; the separate SSH E2E
                 # suite checks the actual transport.
@@ -304,7 +332,7 @@ def run():
                         horizontal:document.documentElement.scrollWidth
                       };
                     })()""")
-                    assert geometry['focus'] and not geometry['headerHidden'] and geometry['tabsHidden'],geometry
+                    assert geometry['focus'] and not geometry['headerHidden'] and not geometry['tabsHidden'],geometry
                     assert geometry['command']['height']<=40,geometry
                     assert geometry['host']['width']>= (width-450 if width>760 else width*.94),geometry
                     assert geometry['host']['height']>=geometry['height']*.88,geometry
@@ -320,14 +348,10 @@ def run():
                 cdp.call("Emulation.setDeviceMetricsOverride",width=1440,height=900,
                          deviceScaleFactor=1,mobile=False)
                 assert cdp.eval("""(function(){
-                  const tabs=document.getElementById('workbenchSessionsToggle');
-                  tabs.click();
-                  const opened=tabs.getAttribute('aria-expanded')==='true' &&
-                    getComputedStyle(document.querySelector('.workbench-session-dock')).display!=='none';
-                  tabs.click();
-                  return opened && tabs.getAttribute('aria-expanded')==='false' &&
-                    getComputedStyle(document.querySelector('.workbench-session-dock')).display==='none';
-                })()"""), "session tab dock failed to open and close"
+                  const dock=document.querySelector('.body-pane.operator-shell > .workbench-session-dock');
+                  const tabs=document.querySelector('#workbenchSessions [role="tab"]');
+                  return !!dock&&getComputedStyle(dock).display!=='none'&&!!tabs;
+                })()"""), "persistent shared session tabs missing"
                 assert cdp.eval("""(function(){
                   const focus=document.getElementById('workbenchFocusToggle');
                   focus.click();

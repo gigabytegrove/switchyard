@@ -27,15 +27,15 @@ grep -Fq "\"version\":\"$expected_version\"" "$TEMP/response" || {
 }
 check_http / 'Switchyard UI responds'
 grep -q 'SWITCHYARD' "$TEMP/response" || { echo 'FAIL: expected UI shell missing' >&2; exit 1; }
-grep -Fq '0.5.9-dev.1' "$TEMP/response" || { echo 'FAIL: compact SwitchYard interface not installed' >&2; exit 1; }
+grep -Fq '0.5.10-dev.1' "$TEMP/response" || { echo 'FAIL: compact SwitchYard interface not installed' >&2; exit 1; }
 grep -Fq '/static/switchyard-mark.webp' "$TEMP/response" || { echo 'FAIL: restored original SwitchYard mark missing' >&2; exit 1; }
-grep -Fq 'style.css?v=0.5.9-dev.1' "$TEMP/response" || { echo 'FAIL: compact SwitchYard CSS reference missing' >&2; exit 1; }
+grep -Fq 'style.css?v=0.5.10-dev.1' "$TEMP/response" || { echo 'FAIL: compact SwitchYard CSS reference missing' >&2; exit 1; }
 echo 'PASS: served HTML identifies the new compact SwitchYard interface'
 check_http /api/setup/status 'Setup status endpoint responds'
 check_http /static/guacamole.js 'Guacamole browser runtime is packaged'
 check_http /static/spice/main.js 'SPICE HTML5 browser runtime is packaged'
 check_http /static/spice-view.html 'SPICE viewer responds'
-check_http '/static/style.css?v=0.5.9-dev.1' 'compact SwitchYard stylesheet is packaged'
+check_http '/static/style.css?v=0.5.10-dev.1' 'compact SwitchYard stylesheet is packaged'
 grep -Fq -- '--sw-logo-red:#bc293a' "$TEMP/response" || { echo 'FAIL: old stylesheet still served' >&2; exit 1; }
 echo 'PASS: verified release-specific compact SwitchYard colors'
 "${CURL[@]}" -D "$TEMP/headers" -o /dev/null "$BASE/static/spice-view.html"
@@ -54,4 +54,4 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   fi
   echo 'PASS: guacd has no published host port'
 fi
-echo 'PASS: non-destructive Switchyard v0.5.9-dev.1 smoke checks complete'
+echo 'PASS: non-destructive Switchyard v0.5.10-dev.1 smoke checks complete'

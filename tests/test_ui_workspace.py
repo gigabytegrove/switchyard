@@ -67,6 +67,6 @@ def test_accessibility_and_responsive_behaviors():
 
 def test_data_integrity():
     compose=(ROOT/'compose.yaml').read_text()
-    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.9-dev.1' in compose
+    assert 'image: ghcr.io/gigabytegrove/switchyard:0.5.10-dev.1' in compose
     assert 'container_name:' not in compose
     assert '/var/run/docker.sock' not in compose
