@@ -151,7 +151,8 @@ http://ops.home.arpa:9791"></textarea>
           </div>
           <div class="machine-rail-resize" id="machineRailResize" role="separator" aria-label="Resize connections directory" aria-orientation="vertical" aria-valuemin="196" aria-valuemax="440" aria-valuenow="236" tabindex="0"></div>
           <aside class="machine-context" aria-label="Switch machine">
-            <div class="workbench-tree-head"><div class="tree-title"><strong>Machines</strong><span id="treeMachineCount">0 machines</span></div><div class="tree-actions"><button id="treeNewFolder" type="button" class="tree-icon-btn" title="Create folder" aria-label="Create folder">⊕</button><button id="treeNewMachine" type="button" class="tree-icon-btn" title="Add machine" aria-label="Add machine">＋</button><button id="treeClose" type="button" class="tree-icon-btn" aria-label="Collapse Machines panel">◂</button></div></div>
+            <div class="workbench-tree-head"><div class="tree-title"><strong>Machines</strong><span id="treeMachineCount">0 machines</span></div><div class="tree-actions"><button id="treeNewFolder" type="button" class="tree-icon-btn" title="Create folder" aria-label="Create folder">⊕</button><button id="treeNewMachine" type="button" class="tree-icon-btn" title="Add SSH, RDP, VNC or SPICE connection" aria-label="Add connection">＋</button><button id="treeClose" type="button" class="tree-icon-btn" aria-label="Collapse Machines panel">◂</button></div></div>
+            <button id="machineAddConnection" type="button" class="operator-new-connection">+ Add connection <small>SSH · RDP · VNC · SPICE</small></button>
             <label class="sr-only" for="machineSwitchSearch">Search machines and folders</label><input id="machineSwitchSearch" type="search" placeholder="Type a name, address, or folder" autocomplete="off" aria-controls="machineSwitcher"><nav id="machineSwitcher" class="connection-tree" aria-label="Machines and folders"></nav><div class="tree-foot"><kbd class="tree-shortcut">Ctrl K</kbd> Search machines</div>
           </aside>
         </div>
@@ -321,6 +322,17 @@ http://ops.home.arpa:9791"></textarea>
       <div class="settings-note"><h2>Persistence</h2><p>SQLite assets, audit records, host trust and Bitwarden CLI state live in your persistent Docker volume under <code>/data</code>. Remote tmux sessions are maintained on each destination machine.</p><div class="form-actions"><button type="button" class="action-small" id="backupDownload">Download consistent backup</button></div><p>The backup contains a live SQLite snapshot and trusted host keys. Sessions, private SSH keys, Vaultwarden CLI cache and bootstrap secrets are intentionally excluded. Keep this file protected; it includes password hashes and asset metadata.</p></div></div></section>
     </main>
   </div>
+  <dialog id="connectionPicker" class="connection-picker" aria-labelledby="connectionPickerTitle">
+    <div class="connection-picker-head"><h2 id="connectionPickerTitle">Add connection</h2><button type="button" id="connectionPickerClose" aria-label="Close connection picker">×</button></div>
+    <p>Choose how SwitchYard will connect. No agent is required on the target machine.</p>
+    <div class="connection-picker-options" role="group" aria-label="Connection protocol">
+      <button type="button" data-new-protocol="ssh"><strong>SSH</strong><span>Shell, SFTP files and Linux management</span></button>
+      <button type="button" data-new-protocol="rdp"><strong>RDP</strong><span>Windows and compatible remote desktops</span></button>
+      <button type="button" data-new-protocol="vnc"><strong>VNC</strong><span>Cross-platform remote desktop sharing</span></button>
+      <button type="button" data-new-protocol="spice"><strong>SPICE</strong><span>Virtual machine console via SPICE server</span></button>
+    </div>
+    <div class="connection-picker-foot"><button type="button" id="connectionPickerCancel" class="action-quiet">Cancel</button></div>
+  </dialog>
   <dialog id="desktopDialog" class="asset-dialog" aria-labelledby="desktopModalTitle">
     <form id="desktopForm"><div class="modal-top"><div><span class="section-kicker">REMOTE DESKTOP CONFIGURATION</span><h2 id="desktopModalTitle">Add a desktop</h2></div><button type="button" id="desktopModalClose" class="close-button" aria-label="Close desktop editor">×</button></div>
       <div class="modal-grid">
