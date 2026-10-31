@@ -1160,3 +1160,55 @@ dialog.editor-dialog .command-input{min-height:240px;height:48dvh}
   .explorer-file-row>.explorer-meta:nth-child(4){display:none}
   .explorer-bottom{flex-direction:column;align-items:flex-start;gap:2px}
 }
+
+
+/* Unified connection discovery, retaining the approved SwitchYard identity. */
+.operator-new-connection{
+  flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+  width:calc(100% - 20px);margin:9px 10px 3px;padding:9px 10px;
+  border:1px solid #af2a44;border-radius:3px;background:#a52942;
+  color:#fff;text-align:left;font-size:12px;font-weight:750;
+}
+.operator-new-connection:hover{background:#872039;color:#fff}
+.operator-new-connection small{font-size:10px;font-weight:500;color:#f7e5e9}
+.machine-profiles{
+  display:flex;flex-direction:column;gap:1px;
+  padding:2px 6px 7px calc(12px + var(--tree-level,0)*9px);
+  border-bottom:1px solid #ded7dd;
+}
+.machine-profile{
+  display:block;width:100%;min-height:27px;padding:4px 9px;
+  border:0;border-radius:2px;background:transparent;
+  color:#5c4a57;font-size:11px;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;
+}
+.machine-profile:hover,.machine-profile:focus-visible{background:#e6dce2;color:#98233e}
+.connection-picker{
+  position:fixed;max-width:min(520px,calc(100vw - 26px));
+  width:100%;padding:0;border:1px solid #c7bdc6;
+  border-radius:6px;background:#fff;color:#27232a;
+  box-shadow:0 24px 70px #130d1670;
+}
+.connection-picker::backdrop{background:#18121bcc}
+.connection-picker-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px 12px;border-bottom:1px solid #e0d7df;
+}
+.connection-picker-head h2{font-size:22px;margin:0}
+.connection-picker-head button{
+  background:transparent;border:0;padding:5px 11px;font-size:22px;color:#4c424b;
+}
+.connection-picker>p{padding:12px 20px 5px;margin:0;font-size:12px;color:#665c65}
+.connection-picker-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:13px 20px 20px}
+.connection-picker-options button{
+  min-height:82px;display:flex;flex-direction:column;justify-content:center;
+  gap:5px;padding:14px;border:1px solid #d6ced5;border-radius:3px;
+  background:#f9f7f8;text-align:left;
+}
+.connection-picker-options button:hover,.connection-picker-options button:focus-visible{
+  border-color:#ac2844;background:#f6e9ed;
+}
+.connection-picker-options strong{font-size:16px;color:#272129}
+.connection-picker-options span{font-size:11px;line-height:1.4;color:#685f68}
+.connection-picker-foot{border-top:1px solid #e0d7df;padding:10px 20px;text-align:right}
+@media(max-width:520px){.connection-picker-options{grid-template-columns:1fr}}
