@@ -301,11 +301,11 @@ def test_spice_vv_bookmarks_save_only_non_secret_identity_and_require_fresh_matc
     assert client.get('/api/desktops/spice/bookmarks').status_code == 401
     login(client)
     def file(ticket, title='VM 9909 - winserver25'):
-        return ('[virt-viewer]\\ntype=spice\\ntitle='+title+
-                '\\nhost=pvespiceproxy:'+ticket+
-                '\\nproxy=http://pve.example.net:3128\\ntls-port=61000'+
-                '\\nhost-subject=O=Proxmox,CN=pve.example.net'+
-                '\\npassword=SINGLE-USE-SECRET-'+ticket+'\\n')
+        return ('[virt-viewer]\ntype=spice\ntitle='+title+
+                '\nhost=pvespiceproxy:'+ticket+
+                '\nproxy=http://pve.example.net:3128\ntls-port=61000'+
+                '\nhost-subject=O=Proxmox,CN=pve.example.net'+
+                '\npassword=SINGLE-USE-SECRET-'+ticket+'\n')
     initial = mutation(client, 'post','/api/desktops/spice/import-vv',
         json={'contents':file('ticket-1'), 'save_bookmark':True})
     assert initial.status_code == 200, initial.text

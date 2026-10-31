@@ -35,7 +35,7 @@ const context=vm.createContext({
   machineTitle:()=> 'Test',
   machineAsset:()=>({id:17}),
   MACHINE_TOOL_PAGES:new Set(['files','docker','services','health','runbooks']),
-  authenticatedSSHForHost:()=>connected?{authenticated:true}:{},
+  authenticatedSSHForHost:()=>connected?{authenticated:true}:null,
   toast:msg=>calls.push('warning: '+msg),
   refreshRunbooks:async()=>calls.push('runbooks'),
   browseFiles:async()=>calls.push('files'),

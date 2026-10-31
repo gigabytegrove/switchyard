@@ -50,7 +50,7 @@ def test_no_single_node_for_each_and_reduced_motion():
     assert ':focus-visible' in CSS
 
 def test_inventory_starts_independently():
-    assert 'await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops()])' in JS
+    assert 'await Promise.all([refreshFolders(), refreshAssets(), refreshDesktops(), refreshSpiceBookmarks()])' in JS
     assert "const [assets,info] = await Promise.all([api('/assets')" in JS
     assert 'void refreshDesktopGateway().catch(showError)' in JS
 
