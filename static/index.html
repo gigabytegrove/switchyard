@@ -82,19 +82,6 @@ http://ops.home.arpa:9791"></textarea>
       <div class="station-navigation">
         <nav id="navigation" aria-label="Primary workspaces">
           <button type="button" data-page="machines" class="nav-item active"><span class="nav-symbol" aria-hidden="true">▦</span> Machines</button>
-          <button type="button" data-page="files" class="nav-item"><span class="nav-symbol" aria-hidden="true">⇅</span> Files</button>
-          <button type="button" data-page="docker" class="nav-item"><span class="nav-symbol" aria-hidden="true">⬡</span> Containers</button>
-          <button type="button" data-page="services" class="nav-item"><span class="nav-symbol" aria-hidden="true">⚙</span> Services</button>
-          <details class="station-dropdown station-tools"><summary>More tools <span aria-hidden="true">⌄</span></summary>
-            <div class="station-dropdown-menu">
-              <button type="button" data-page="health" class="nav-item"><span class="nav-symbol" aria-hidden="true">◉</span> System health</button>
-              <button type="button" data-page="runbooks" class="nav-item"><span class="nav-symbol" aria-hidden="true">⌘</span> Runbooks</button>
-              <button type="button" data-page="activity" class="nav-item"><span class="nav-symbol" aria-hidden="true">◷</span> Audit journal</button>
-              <button type="button" id="sshExport" class="nav-item">Export SSH inventory</button>
-              <button type="button" id="sshImport" class="nav-item">Import SSH inventory</button>
-              <input id="sshImportFile" type="file" accept=".json,application/json" hidden aria-label="SSH inventory JSON">
-            </div>
-          </details>
         </nav>
       </div>
       <div class="station-actions">
@@ -103,6 +90,10 @@ http://ops.home.arpa:9791"></textarea>
           <nav id="adminNavigation" class="station-dropdown-menu" aria-label="Administration">
             <button type="button" data-page="keys" class="nav-item">SSH keys</button>
             <button type="button" data-page="trust" class="nav-item">Host trust</button>
+            <button type="button" data-page="activity" class="nav-item">Audit journal</button>
+            <button type="button" id="sshExport" class="nav-item">Export SSH inventory</button>
+            <button type="button" id="sshImport" class="nav-item">Import SSH inventory</button>
+            <input id="sshImportFile" type="file" accept=".json,application/json" hidden aria-label="SSH inventory JSON">
             <button type="button" data-page="settings" class="nav-item">Settings</button>
           </nav>
         </details>
@@ -115,6 +106,19 @@ http://ops.home.arpa:9791"></textarea>
         <div class="breadcrumb"><span class="crumb-prefix">WORKSPACE</span><b aria-hidden="true">/</b><strong id="bread">Machines</strong></div>
         <div class="top-right"><span class="station-version" id="stationVersion">0.5.10-dev.1</span><span id="clock"></span></div>
       </div>
+       <nav id="machineToolNavigation" class="machine-tool-navigation" aria-label="Tools for the connected machine" hidden>
+         <span class="machine-tools-identity"><span id="machineToolsHost">No SSH connection</span><small id="machineToolsState">Connected via SSH</small></span>
+         <button type="button" data-machine-tool="machine" class="machine-tool-link">Workspace</button>
+         <button type="button" data-machine-tool="files" class="machine-tool-link">Files</button>
+         <button type="button" data-machine-tool="docker" class="machine-tool-link">Containers</button>
+         <button type="button" data-machine-tool="services" class="machine-tool-link">Services</button>
+         <details class="machine-tool-more" id="machineToolMore"><summary>More tools <span aria-hidden="true">⌄</span></summary>
+           <div class="machine-tool-menu">
+             <button type="button" data-machine-tool="health" class="machine-tool-link">System health</button>
+             <button type="button" data-machine-tool="runbooks" class="machine-tool-link">Runbooks</button>
+           </div>
+         </details>
+       </nav>
       <!-- Compatibility-only DOM for inventory export and legacy directory bindings.
            This is not a page: Machines always opens the two-pane workbench. -->
       <div id="legacyMachineDirectoryBindings" hidden>
@@ -331,7 +335,7 @@ http://ops.home.arpa:9791"></textarea>
       <button type="button" data-new-protocol="vnc"><strong>VNC</strong><span>Cross-platform remote desktop sharing</span></button>
       <button type="button" data-new-protocol="spice"><strong>SPICE</strong><span>Virtual machine console via SPICE server</span></button>
     </div>
-    <div class="connection-picker-foot"><button type="button" id="connectionImportVV" class="action-quiet">Import SPICE .vv file</button><button type="button" id="connectionPickerCancel" class="action-quiet">Cancel</button></div>
+    <div class="connection-picker-foot"><label class="spice-bookmark-choice"><input id="spiceSaveBookmark" type="checkbox" checked> Save in Machines (fresh .vv required each time)</label><button type="button" id="connectionImportVV" class="action-quiet">Import SPICE .vv file</button><button type="button" id="connectionPickerCancel" class="action-quiet">Cancel</button></div>
   </dialog>
   <dialog id="desktopDialog" class="asset-dialog" aria-labelledby="desktopModalTitle">
     <form id="desktopForm"><div class="modal-top"><div><span class="section-kicker">REMOTE DESKTOP CONFIGURATION</span><h2 id="desktopModalTitle">Add a desktop</h2></div><button type="button" id="desktopModalClose" class="close-button" aria-label="Close desktop editor">×</button></div>
